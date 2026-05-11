@@ -9,25 +9,36 @@ import {
   useSensors,
 } from '@dnd-kit/core';
 import clsx from 'clsx';
-import type { Task, TaskStatus, User } from '../types';
+import type { Project, Task, TaskStatus, User } from '../types';
+import { Avatar, DueLabel, Icon, ProjectDot } from './atoms';
 
 type Props = {
   tasks: Task[];
   users: User[];
+  project: Project;
   onAdd: (title: string) => void;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onSelect: (id: string) => void;
 };
 
-const COLUMNS: { status: TaskStatus; label: string; accent: string }[] = [
-  { status: 'todo', label: 'To do', accent: 'border-t-asana-slate' },
-  { status: 'doing', label: 'Doing', accent: 'border-t-asana-blue' },
-  { status: 'blocked', label: 'Blocked', accent: 'border-t-asana-coral' },
-  { status: 'done', label: 'Done', accent: 'border-t-asana-green' },
+const COLUMNS: { status: TaskStatus; label: string }[] = [
+  { status: 'todo', label: 'To do' },
+  { status: 'doing', label: 'Doing' },
+  { status: 'blocked', label: 'Held' },
+  { status: 'done', label: 'Done' },
 ];
 
-export default function BoardView({ tasks, users, onAdd, onUpdate, onSelect }: Props) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+export default function BoardView({
+  tasks,
+  users,
+  project,
+  onAdd,
+  onUpdate,
+  onSelect,
+}: Props) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
+  );
 
   function onDragEnd(e: DragEndEvent) {
     const id = String(e.active.id);
@@ -39,16 +50,17 @@ export default function BoardView({ tasks, users, onAdd, onUpdate, onSelect }: P
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4 md:p-6">
+      <div className="flex h-full gap-3.5 overflow-x-auto px-5 py-5 md:px-7">
         {COLUMNS.map((col) => (
           <Column
             key={col.status}
             label={col.label}
-            accent={col.accent}
             status={col.status}
             tasks={tasks.filter((t) => !t.parent_id && t.status === col.status)}
             users={users}
-            onAdd={onAdd}
+            project={project}
+            onAdd={(title) => onAdd(title)}
+            onUpdateStatus={() => onAdd('')}
             onSelect={onSelect}
           />
         ))}
@@ -60,18 +72,19 @@ export default function BoardView({ tasks, users, onAdd, onUpdate, onSelect }: P
 function Column({
   status,
   label,
-  accent,
   tasks,
   users,
+  project,
   onAdd,
   onSelect,
 }: {
   status: TaskStatus;
   label: string;
-  accent: string;
   tasks: Task[];
   users: User[];
+  project: Project;
   onAdd: (title: string) => void;
+  onUpdateStatus: () => void;
   onSelect: (id: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
@@ -89,23 +102,45 @@ function Column({
     <div
       ref={setNodeRef}
       className={clsx(
-        'flex w-72 shrink-0 flex-col rounded-lg border-t-4 bg-white shadow-sm',
-        accent,
-        isOver && 'ring-2 ring-asana-blue/40'
+        'flex h-full w-[268px] shrink-0 flex-col rounded-card bg-stoop-panel-warm p-2.5 transition-shadow',
+        isOver && 'shadow-[0_0_0_2px_theme(colors.stoop.accent-soft-2)]'
       )}
     >
-      <div className="flex items-center justify-between px-3 pt-2">
-        <span className="text-sm font-semibold">{label}</span>
-        <span className="text-xs text-asana-slate">{tasks.length}</span>
+      <div className="flex items-center gap-2 px-2 pb-2.5 pt-1.5">
+        <span className="display text-[15px] font-medium">{label}</span>
+        <span className="text-[12px] tabular-nums text-stoop-muted">
+          {tasks.length}
+        </span>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          aria-label={`Add to ${label}`}
+          className="rounded p-1 text-stoop-muted hover:bg-stoop-hairline"
+        >
+          <Icon.Plus className="h-3.5 w-3.5" />
+        </button>
       </div>
-      <div className="flex flex-1 flex-col gap-2 p-2">
+
+      <div className="flex flex-1 flex-col gap-2 overflow-auto">
         {tasks.map((t) => (
-          <Card key={t.id} task={t} users={users} onSelect={() => onSelect(t.id)} />
+          <Card
+            key={t.id}
+            task={t}
+            users={users}
+            project={project}
+            onSelect={() => onSelect(t.id)}
+          />
         ))}
-        {adding ? (
+        {tasks.length === 0 && !adding && (
+          <div className="px-3 py-3 text-center text-xs text-stoop-muted">
+            —
+          </div>
+        )}
+        {adding && (
           <input
             autoFocus
-            className="input py-1.5 text-sm"
+            className="input-shell py-1.5 text-sm"
             placeholder="Task title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -118,26 +153,30 @@ function Column({
             }}
             onBlur={submit}
           />
-        ) : (
-          <button
-            className="rounded-md py-1.5 text-left text-sm text-asana-slate hover:bg-asana-stone"
-            onClick={() => setAdding(true)}
-          >
-            + Add task
-          </button>
         )}
       </div>
     </div>
   );
 }
 
-function Card({ task, users, onSelect }: { task: Task; users: User[]; onSelect: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
+function Card({
+  task,
+  users,
+  project,
+  onSelect,
+}: {
+  task: Task;
+  users: User[];
+  project: Project;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: task.id });
   const assignee = users.find((u) => u.id === task.assignee_id);
-  const due = task.due_date ? new Date(task.due_date) : null;
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
+  const done = task.status === 'done';
 
   return (
     <div
@@ -146,27 +185,33 @@ function Card({ task, users, onSelect }: { task: Task; users: User[]; onSelect: 
       {...attributes}
       {...listeners}
       onClick={(e) => {
-        // Avoid firing select on accidental drag clicks
         if (!isDragging) onSelect();
         e.stopPropagation();
       }}
       className={clsx(
-        'cursor-grab rounded-md border border-asana-line bg-white p-2 text-sm shadow-sm hover:border-asana-blue/50',
-        isDragging && 'opacity-50'
+        'cursor-grab rounded-[12px] border border-stoop-hairline bg-stoop-panel px-[13px] py-3 transition-colors hover:border-stoop-hairline-2',
+        isDragging && 'opacity-50',
+        done && 'opacity-70'
       )}
     >
-      <div className="font-medium">{task.title}</div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-asana-slate">
-        {assignee && (
-          <span
-            className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold text-white"
-            style={{ background: assignee.avatar_color }}
-            title={assignee.name}
-          >
-            {assignee.name.charAt(0)}
-          </span>
+      <div
+        className={clsx(
+          'text-[13.5px] leading-snug text-stoop-ink',
+          done && 'line-through'
         )}
-        {due && <span>{due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
+      >
+        {task.title}
+      </div>
+      <div className="mt-2.5 flex items-center gap-2">
+        <span className="inline-flex items-center gap-1.5">
+          <ProjectDot project={project} size={7} />
+          <span className="truncate text-[11.5px] text-stoop-muted">
+            {project.name}
+          </span>
+        </span>
+        <span className="flex-1" />
+        <DueLabel ts={task.due_date} />
+        {assignee && <Avatar user={assignee} size={20} />}
       </div>
     </div>
   );

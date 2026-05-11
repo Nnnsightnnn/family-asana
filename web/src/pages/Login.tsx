@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { api } from '../api';
+import { Icon } from '../components/atoms';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -22,48 +23,123 @@ export default function Login() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-xl border border-asana-line bg-white p-7 shadow-sm">
-        <div className="mb-6 flex items-center gap-2">
-          <div className="h-7 w-7 rounded-md bg-asana-blue" />
-          <h1 className="text-lg font-semibold">Family Asana</h1>
-        </div>
-
-        {sent ? (
-          <div className="space-y-3 text-sm">
-            <p className="font-medium">Check your email.</p>
-            <p className="text-asana-slate">
-              We sent a sign-in link to <span className="text-asana-ink">{email}</span>. The link
-              expires in 15 minutes.
-            </p>
-            <button className="btn-ghost mt-2 w-full" onClick={() => setSent(false)}>
-              Use a different email
-            </button>
+    <div className="paper flex h-full">
+      {/* Form column */}
+      <div className="flex flex-1 items-center justify-center px-6 py-10 md:px-16">
+        <div className="w-full max-w-sm">
+          <div className="mb-12 flex items-center gap-2.5">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-stoop-accent text-white">
+              <Icon.Home className="h-4 w-4" />
+            </span>
+            <span className="font-medium tracking-tight">Family</span>
           </div>
-        ) : (
-          <form onSubmit={onSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Email</label>
-              <input
-                type="email"
-                required
-                autoFocus
-                className="input"
-                placeholder="you@family.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-asana-coral">{error}</p>}
-            <button className="btn-primary w-full" disabled={loading || !email}>
-              {loading ? 'Sending…' : 'Send sign-in link'}
-            </button>
-            <p className="pt-1 text-center text-xs text-asana-slate">
-              No password to remember.
-            </p>
-          </form>
-        )}
+
+          {sent ? (
+            <>
+              <h1 className="display text-[36px] leading-[1.05] m-0">
+                Check your <span className="display-italic">inbox.</span>
+              </h1>
+              <p className="mt-3.5 text-[15px] leading-relaxed text-stoop-muted">
+                We sent a link to{' '}
+                <span className="text-stoop-ink">{email}</span>. It expires in
+                15 minutes.
+              </p>
+              <div className="mt-7 flex items-start gap-3 rounded-card border border-stoop-hairline bg-stoop-panel p-4">
+                <Icon.Mail className="mt-0.5 h-4 w-4 shrink-0 text-stoop-accent" />
+                <div className="text-[13.5px] leading-snug">
+                  Didn’t see it? Check spam, or{' '}
+                  <button
+                    type="button"
+                    className="text-stoop-accent hover:underline"
+                    onClick={() => setSent(false)}
+                  >
+                    send another
+                  </button>
+                  .
+                </div>
+              </div>
+            </>
+          ) : (
+            <form onSubmit={onSubmit}>
+              <h1 className="display text-[40px] leading-[1.05] m-0">
+                Welcome <span className="display-italic">home.</span>
+              </h1>
+              <p className="mt-3.5 text-[15px] leading-relaxed text-stoop-muted">
+                Pop in your email and we’ll send a one-tap sign-in link. No
+                password, nothing to remember.
+              </p>
+
+              <div className="mt-8">
+                <label className="block text-[11px] font-medium uppercase tracking-[0.04em] text-stoop-muted">
+                  Your email
+                </label>
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  className="input-shell mt-2 text-[15px]"
+                  placeholder="you@home"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                {error && (
+                  <p className="mt-3 text-sm text-[#B36447]">{error}</p>
+                )}
+                <button
+                  className="btn-primary mt-4 w-full py-3.5 text-[15px]"
+                  disabled={loading || !email}
+                >
+                  {loading ? 'Sending…' : 'Send sign-in link'}
+                </button>
+                <p className="mt-3.5 text-xs text-stoop-muted">
+                  Only people on this household’s allowlist can sign in.
+                </p>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
+
+      {/* Quiet illustration rail — desktop only */}
+      <aside
+        className="relative hidden flex-[1.1] overflow-hidden md:block"
+        style={{
+          background:
+            'linear-gradient(160deg, #F1E3D8 0%, #E9D5C3 60%, #D9C0A8 100%)',
+        }}
+      >
+        <div
+          className="absolute"
+          style={{
+            top: 60,
+            right: -40,
+            width: 280,
+            height: 280,
+            borderRadius: '50%',
+            background:
+              'radial-gradient(circle, rgba(255,238,210,0.9), rgba(255,238,210,0) 70%)',
+            filter: 'blur(2px)',
+          }}
+        />
+        <div
+          className="absolute"
+          style={{
+            top: 90,
+            right: 30,
+            width: 90,
+            height: 90,
+            borderRadius: '50%',
+            background: '#F8E4C4',
+            boxShadow: '0 0 80px 20px rgba(248,228,196,0.7)',
+          }}
+        />
+        <div className="absolute inset-0 flex flex-col justify-end p-12">
+          <div className="display-italic max-w-[360px] text-[22px] leading-[1.4] text-stoop-ink-soft">
+            “Three of us, one place to keep the small things.”
+          </div>
+          <div className="mt-2 text-[13px] text-stoop-muted">— this household</div>
+        </div>
+      </aside>
     </div>
   );
 }

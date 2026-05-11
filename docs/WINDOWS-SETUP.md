@@ -108,6 +108,24 @@ That copies the SQLite file to OneDrive every 6 hours and keeps the most recent 
 
 > SQLite in WAL mode is safe to copy live — the WAL is checkpointed on each connection close and the main file is consistent.
 
+### 9a. Weekly backup verification
+
+A backup you can't restore isn't a backup. `scripts/verify-backup.ps1` copies the most recent `.db` from `C:\family-asana\backups\` to a temp file and runs `PRAGMA integrity_check` against it; exit 0 on `ok`, exit 1 otherwise.
+
+Schedule it weekly (Sunday 04:00) with a single command in an Administrator PowerShell:
+
+```powershell
+schtasks /Create /SC WEEKLY /D SUN /TN "FamilyAsanaBackupVerify" /TR "powershell -ExecutionPolicy Bypass -File C:\family-asana\scripts\verify-backup.ps1" /ST 04:00
+```
+
+To run it manually any time:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\family-asana\scripts\verify-backup.ps1
+```
+
+If the backup folder you're verifying differs from the default (`C:\family-asana\backups\`) — e.g. you point the 6-hour backup task at OneDrive — edit `$BackupDir` at the top of `verify-backup.ps1` to match.
+
 ## 10. Test the failure cases
 
 Before declaring victory:

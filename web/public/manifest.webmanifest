@@ -1,0 +1,19 @@
+{
+  "name": "Family Asana",
+  "short_name": "Family",
+  "description": "Self-hosted task manager for the household.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#A86A4B",
+  "background_color": "#ECE7DC",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -3,25 +3,85 @@
 @tailwind utilities;
 
 @layer base {
-  html, body, #root { height: 100%; }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
   body {
-    @apply bg-asana-stone text-asana-ink font-sans antialiased;
-    font-feature-settings: 'cv11', 'ss01';
+    margin: 0;
+    background: #ece7dc;
+    color: #1f1b17;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: #f1e3d8;
   }
 }
 
 @layer components {
+  /* Faint paper grain on the warm canvas */
+  .paper {
+    background-color: theme('colors.stoop.canvas');
+    background-image:
+      radial-gradient(rgba(80, 55, 30, 0.025) 1px, transparent 1px),
+      radial-gradient(rgba(80, 55, 30, 0.018) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1px 2px;
+  }
+
+  .display {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  .display-italic {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+  }
+
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-button border border-transparent
+           px-3.5 py-2 text-sm font-medium transition-colors;
   }
   .btn-primary {
-    @apply btn bg-asana-blue text-white hover:bg-[#3a63b8];
+    @apply btn bg-stoop-accent text-white hover:bg-stoop-accent-deep;
   }
   .btn-ghost {
-    @apply btn text-asana-ink hover:bg-asana-line;
+    @apply btn bg-transparent text-stoop-ink hover:bg-stoop-hairline;
   }
-  .input {
-    @apply w-full rounded-md border border-asana-line bg-white px-3 py-2 text-sm
-           outline-none focus:border-asana-blue focus:ring-2 focus:ring-asana-blue/20;
+  .btn-outline {
+    @apply btn bg-transparent text-stoop-ink border-stoop-hairline-2 hover:bg-stoop-panel-warm;
+  }
+
+  .input-shell {
+    @apply w-full rounded-input border border-stoop-hairline-2 bg-stoop-panel px-3 py-2.5
+           text-stoop-ink outline-none transition-colors
+           focus:border-stoop-accent focus:ring-2 focus:ring-stoop-accent-soft;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-transparent
+           px-2.5 py-1 text-xs font-medium;
+  }
+
+  /* AI-suggested zone — dashed warm border, faint glow.
+     Kept for future use; Phase 1 doesn't render it yet. */
+  .ai-zone {
+    background: linear-gradient(180deg, #fbf6ee 0%, #f8f1e5 100%);
+    border: 1px dashed theme('colors.stoop.accent');
+    border-radius: theme('borderRadius.card');
+    position: relative;
+  }
+  .ai-zone::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 4px rgba(168, 106, 75, 0.06);
   }
 }

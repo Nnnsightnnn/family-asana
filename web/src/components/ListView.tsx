@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import type { Task, TaskStatus, User } from '../types';
+import {
+  Avatar,
+  DueLabel,
+  Icon,
+  StatusChip,
+  StatusCheckbox,
+} from './atoms';
 
 type Props = {
   tasks: Task[];
@@ -11,16 +18,17 @@ type Props = {
   selectedId: string | null;
 };
 
-const STATUSES: { value: TaskStatus; label: string }[] = [
-  { value: 'todo', label: 'To do' },
-  { value: 'doing', label: 'Doing' },
-  { value: 'blocked', label: 'Blocked' },
-  { value: 'done', label: 'Done' },
-];
+const COLS = '24px minmax(0,1fr) 110px 130px 140px 40px';
 
-export default function ListView({ tasks, users, onAdd, onUpdate, onSelect, selectedId }: Props) {
+export default function ListView({
+  tasks,
+  users,
+  onAdd,
+  onUpdate,
+  onSelect,
+  selectedId,
+}: Props) {
   const [newTitle, setNewTitle] = useState('');
-
   const top = tasks.filter((t) => !t.parent_id);
 
   function submit() {
@@ -31,141 +39,127 @@ export default function ListView({ tasks, users, onAdd, onUpdate, onSelect, sele
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
-      <div className="overflow-hidden rounded-lg border border-asana-line bg-white">
-        <div className="grid grid-cols-[1fr_120px_120px_120px] gap-2 border-b border-asana-line px-4 py-2 text-xs font-semibold uppercase tracking-wide text-asana-slate">
+    <div className="px-5 py-6 md:px-10">
+      <div className="mx-auto max-w-[880px]">
+        {/* Column headers */}
+        <div
+          className="grid items-center gap-3.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-stoop-muted"
+          style={{ gridTemplateColumns: COLS }}
+        >
+          <span />
           <span>Task</span>
-          <span>Assignee</span>
-          <span>Due date</span>
           <span>Status</span>
+          <span>Due</span>
+          <span>Who</span>
+          <span />
         </div>
-        <ul>
-          {top.map((t) => (
-            <TaskRow
+
+        <div className="overflow-hidden rounded-card border border-stoop-hairline bg-stoop-panel">
+          {top.length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-stoop-muted">
+              No tasks yet — add the first one below.
+            </div>
+          )}
+          {top.map((t, i) => (
+            <Row
               key={t.id}
               task={t}
               users={users}
               selected={selectedId === t.id}
+              last={i === top.length - 1}
               onSelect={() => onSelect(t.id)}
               onUpdate={(data) => onUpdate(t.id, data)}
             />
           ))}
-          <li className="grid grid-cols-[1fr_120px_120px_120px] items-center gap-2 px-4 py-2">
+
+          {/* Inline add row */}
+          <div
+            className="grid items-center gap-3.5 bg-stoop-panel-warm px-4 py-3.5 text-sm text-stoop-muted"
+            style={{ gridTemplateColumns: COLS }}
+          >
+            <Icon.Plus className="h-3.5 w-3.5" />
             <input
-              className="bg-transparent text-sm outline-none placeholder:text-asana-slate"
-              placeholder="+ Add task"
+              data-shortcut="new-task"
+              className="bg-transparent text-sm outline-none placeholder:text-stoop-muted"
+              placeholder="Add a task… (enter to save)"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && submit()}
               onBlur={submit}
             />
-          </li>
-        </ul>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function TaskRow({
+function Row({
   task,
   users,
   selected,
+  last,
   onSelect,
   onUpdate,
 }: {
   task: Task;
   users: User[];
   selected: boolean;
+  last: boolean;
   onSelect: () => void;
   onUpdate: (data: Partial<Task>) => void;
 }) {
   const assignee = users.find((u) => u.id === task.assignee_id);
-  const due = task.due_date ? new Date(task.due_date) : null;
+  const done = task.status === 'done';
+
+  function toggleDone(e: React.MouseEvent) {
+    e.stopPropagation();
+    onUpdate({ status: done ? 'todo' : 'done' });
+  }
+  function cycleStatus(e: React.MouseEvent) {
+    e.stopPropagation();
+    const order: TaskStatus[] = ['todo', 'doing', 'blocked', 'done'];
+    const next = order[(order.indexOf(task.status) + 1) % order.length];
+    onUpdate({ status: next });
+  }
 
   return (
-    <li
-      className={clsx(
-        'grid cursor-pointer grid-cols-[1fr_120px_120px_120px] items-center gap-2 border-b border-asana-line px-4 py-2 last:border-b-0 hover:bg-asana-stone',
-        selected && 'bg-asana-stone'
-      )}
+    <div
       onClick={onSelect}
+      className={clsx(
+        'grid cursor-pointer items-center gap-3.5 px-4 py-3.5 text-sm transition-colors hover:bg-stoop-canvas',
+        !last && 'border-b border-stoop-hairline',
+        selected && 'bg-stoop-canvas',
+        done && 'opacity-60'
+      )}
+      style={{ gridTemplateColumns: COLS }}
     >
-      <div className="flex items-center gap-2">
-        <button
-          aria-label="Toggle complete"
-          onClick={(e) => {
-            e.stopPropagation();
-            onUpdate({ status: task.status === 'done' ? 'todo' : 'done' });
-          }}
-          className={clsx(
-            'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
-            task.status === 'done'
-              ? 'border-asana-green bg-asana-green text-white'
-              : 'border-asana-line'
-          )}
-        >
-          {task.status === 'done' && <span className="text-[10px]">✓</span>}
-        </button>
-        <span className={clsx('truncate text-sm', task.status === 'done' && 'text-asana-slate line-through')}>
-          {task.title}
-        </span>
-      </div>
-
-      <span className="text-sm text-asana-slate">
-        {assignee ? (
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-              style={{ background: assignee.avatar_color }}
-            >
-              {assignee.name.charAt(0)}
-            </span>
-            <span className="truncate">{assignee.name.split(' ')[0]}</span>
-          </span>
-        ) : (
-          <span className="text-asana-slate">—</span>
+      <span onClick={toggleDone}>
+        <StatusCheckbox status={task.status} />
+      </span>
+      <div
+        className={clsx(
+          'min-w-0 truncate text-sm',
+          done && 'line-through'
         )}
+      >
+        {task.title}
+      </div>
+      <span onClick={cycleStatus} className="cursor-pointer">
+        <StatusChip status={task.status} />
       </span>
-
-      <span className="text-sm text-asana-slate">
-        {due
-          ? due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-          : '—'}
-      </span>
-
-      <StatusPill
-        status={task.status}
-        onChange={(s) => onUpdate({ status: s })}
-      />
-    </li>
-  );
-}
-
-function StatusPill({
-  status,
-  onChange,
-}: {
-  status: TaskStatus;
-  onChange: (s: TaskStatus) => void;
-}) {
-  const styles: Record<TaskStatus, string> = {
-    todo: 'bg-asana-stone text-asana-slate',
-    doing: 'bg-asana-blue/10 text-asana-blue',
-    blocked: 'bg-asana-coral/10 text-asana-coral',
-    done: 'bg-asana-green/10 text-asana-green',
-  };
-  return (
-    <select
-      className={clsx('rounded-full border-none px-2 py-1 text-xs font-medium outline-none', styles[status])}
-      value={status}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => onChange(e.target.value as TaskStatus)}
-    >
-      {STATUSES.map((s) => (
-        <option key={s.value} value={s.value}>
-          {s.label}
-        </option>
-      ))}
-    </select>
+      <DueLabel ts={task.due_date} />
+      <div className="flex items-center gap-2">
+        {assignee ? (
+          <>
+            <Avatar user={assignee} size={22} />
+            <span className="truncate text-[13px]">{assignee.name}</span>
+          </>
+        ) : (
+          <span className="text-[13px] text-stoop-muted">Unassigned</span>
+        )}
+      </div>
+      <Icon.More className="h-4 w-4 text-stoop-muted" />
+    </div>
   );
 }
