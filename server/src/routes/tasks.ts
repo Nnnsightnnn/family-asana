@@ -39,6 +39,31 @@ const TaskPatch = TaskInput.partial().extend({
 });
 
 export async function taskRoutes(app: FastifyInstance) {
+  // Cross-project search: title/description LIKE %q%, joined with project.
+  // Escapes LIKE wildcards in user input so '%' and '_' are matched literally.
+  app.get('/search', async (req, reply) => {
+    await requireUser(req, reply);
+    const parsed = z
+      .object({
+        q: z.string().min(2).max(200),
+        limit: z.coerce.number().int().min(1).max(50).optional(),
+      })
+      .parse(req.query);
+    // Escape SQL LIKE metacharacters in user input. '\' is our ESCAPE char.
+    const escaped = parsed.q.replace(/[\\%_]/g, (ch) => '\\' + ch);
+    const pattern = `%${escaped}%`;
+    const limit = parsed.limit ?? 20;
+    const sql = `
+      SELECT t.*, p.name AS project_name, p.color AS project_color
+        FROM tasks t
+        JOIN projects p ON p.id = t.project_id
+       WHERE (t.title LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\')
+       ORDER BY t.updated_at DESC
+       LIMIT ?
+    `;
+    return db.prepare(sql).all(pattern, pattern, limit);
+  });
+
   // List tasks, filterable by project or assignee
   app.get('/', async (req, reply) => {
     await requireUser(req, reply);

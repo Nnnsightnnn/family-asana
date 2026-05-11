@@ -1,5 +1,10 @@
 import type { Project, ScopeResult, Task, User } from './types';
 
+export type TaskSearchHit = Task & {
+  project_name: string;
+  project_color: string;
+};
+
 async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -41,6 +46,11 @@ export const api = {
     if (params.project_id) qs.set('project_id', params.project_id);
     if (params.mine) qs.set('mine', '1');
     return http<Task[]>('GET', `/api/tasks?${qs.toString()}`);
+  },
+  searchTasks: (q: string, limit?: number) => {
+    const qs = new URLSearchParams({ q });
+    if (limit != null) qs.set('limit', String(limit));
+    return http<TaskSearchHit[]>('GET', `/api/tasks/search?${qs.toString()}`);
   },
   createTask: (data: Partial<Task> & { project_id: string; title: string }) =>
     http<Task>('POST', '/api/tasks', data),

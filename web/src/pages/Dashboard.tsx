@@ -8,6 +8,7 @@ import ProjectView from '../components/ProjectView';
 import MyTasks from '../components/MyTasks';
 import CalendarView from '../components/CalendarView';
 import { Icon } from '../components/atoms';
+import SearchBar from '../components/SearchBar';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 
 export default function Dashboard({ user }: { user: User }) {
@@ -95,6 +96,16 @@ export default function Dashboard({ user }: { user: User }) {
             <Icon.Menu className="h-5 w-5" />
           </button>
           <span className="display text-base">Family</span>
+          <span className="flex-1" />
+          <div className="min-w-0 flex-1">
+            <SearchBar />
+          </div>
+        </div>
+
+        {/* Desktop top bar — holds the cross-project search input */}
+        <div className="hidden h-12 items-center gap-3 border-b border-stoop-hairline bg-stoop-canvas px-6 md:flex">
+          <span className="flex-1" />
+          <SearchBar />
         </div>
 
         <div className="min-h-0 flex-1">
