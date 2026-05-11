@@ -4,6 +4,36 @@ This is the dispatch view of remaining work. Each item below is a self-contained
 
 For the *why* and *what* of the product, read [`SCOPE.md`](SCOPE.md). For the bigger Phase 1 checklist, [`PHASE-1-SPEC.md`](PHASE-1-SPEC.md). This doc is the *how do we ship it* layer.
 
+## Status (as of 2026-05-11)
+
+**Deployed**: `http://ncit:4000` over Tailscale. NSSM service `FamilyAsana` on the Windows PC. Resend wired to `mail.nnnsightnnn.com` for magic-link email.
+
+**Done**:
+- ✅ A1 — Prod static serving (`@fastify/static` + SPA fallback)
+- ✅ A2 — Seed script (`npm run seed`)
+- ✅ A3 — Smoke tests (`npm test`, 7/7 pass)
+- ✅ B1 — Optimistic task mutations
+- ✅ B3 — Keyboard shortcuts (`n`, `esc`, `/`)
+- ✅ C1 — Error boundaries (root + drawer)
+- ✅ C3 — PWA manifest + icon
+- ✅ D1 — `scripts/admin.ps1`
+- ✅ D3 — `scripts/verify-backup.ps1`
+
+**Next priority — pair these, the user wants them soon**:
+- ⏳ **A4 — `/api/admin/*` route surface** (gate on `ADMIN_EMAILS` env var)
+- ⏳ **D2 — in-app `/admin` page** (depends on A4)
+
+**Also remaining (Phase 1 polish)**:
+- ⏳ B2 — drag-to-reorder within a column
+- ⏳ B4 — cross-project search
+- ⏳ B5 — project menu (rename / color / archive)
+- ⏳ B6 — empty-state polish
+- ⏳ C2 — mobile review pass
+- ⏳ C4 — a11y quick pass
+- ⏳ D4 — first-run setup wizard
+
+**Phase 2+** (E/F/G) blocked until Phase 1 polish above is green.
+
 ## Streams
 
 - **A — Backend infrastructure** — Fastify, SQLite, deployability
@@ -13,18 +43,6 @@ For the *why* and *what* of the product, read [`SCOPE.md`](SCOPE.md). For the bi
 - **E — Phase 2: Calendar + recurring** (blocked on Phase 1 done)
 - **F — Phase 3: Comments + attachments** (blocked on Phase 1 done)
 - **G — Phase 4: Notifications** (blocked on Phase 2/3)
-
-## Suggested dispatch (first parallel wave)
-
-Three sub-agents can run concurrently with no merge conflicts:
-
-| Agent | Picks up | Touches |
-|---|---|---|
-| 1 | **A1 + A2 + A3** | `server/` only |
-| 2 | **B1 + B2 + B3** | `web/src/components/` + `web/src/pages/` |
-| 3 | **D1 + D3 + docs** | `scripts/` + `docs/` |
-
-Once that wave lands, a second wave (B4, B5, B6, C1, C2, C3, D2) is unblocked and similarly parallelizable. Phase 2+ streams stay blocked until **all of A, B, C** are green.
 
 ---
 
