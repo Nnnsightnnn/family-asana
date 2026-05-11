@@ -36,8 +36,13 @@ test('mobilization: scoping disabled + storage round-trip', async (t) => {
       body: JSON.stringify({ title: 'Kitchen sink is leaking' }),
     });
     assert.equal(res.status, 200);
-    const body = (await res.json()) as { disabled?: boolean; route: string };
+    const body = (await res.json()) as {
+      disabled?: boolean;
+      disabled_reason?: string;
+      route: string;
+    };
     assert.equal(body.disabled, true);
+    assert.equal(body.disabled_reason, 'no_key');
     assert.equal(body.route, 'unset');
   });
 
@@ -147,9 +152,13 @@ test('mobilization: scoping disabled + storage round-trip', async (t) => {
       body: JSON.stringify({}),
     });
     assert.equal(res.status, 503);
-    const body = (await res.json()) as { error: string; result: { disabled: boolean } };
+    const body = (await res.json()) as {
+      error: string;
+      result: { disabled: boolean; disabled_reason?: string };
+    };
     assert.equal(body.error, 'scoping_disabled');
     assert.equal(body.result.disabled, true);
+    assert.equal(body.result.disabled_reason, 'no_key');
 
     // Task should remain unscoped because we refused to persist a disabled result.
     const getRes = await af(`/api/tasks/${task.id}`);

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { api } from '../api';
-import type { Task, User } from '../types';
+import type { ScopeDisabledReason, Task, User } from '../types';
 import { Icon } from './atoms';
 import ListView from './ListView';
 import BoardView from './BoardView';
@@ -90,7 +90,7 @@ export default function ProjectView({ projectId, users }: Props) {
   async function scopeTaskOnServer(
     id: string,
     tier?: 'fast' | 'smart'
-  ): Promise<{ disabled: boolean }> {
+  ): Promise<{ disabled: boolean; disabled_reason?: ScopeDisabledReason }> {
     const result = await api.scopeTask(id, tier);
     if (!result.disabled && result.task) {
       // Patch the cache so the drawer updates without a network round-trip.
@@ -99,7 +99,7 @@ export default function ProjectView({ projectId, users }: Props) {
       );
       qc.invalidateQueries({ queryKey: ['tasks', projectId] });
     }
-    return { disabled: result.disabled };
+    return { disabled: result.disabled, disabled_reason: result.scope.disabled_reason };
   }
 
   function select(id: string | null) {

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { api } from '../api';
-import type { Project, Task, User } from '../types';
+import type { Project, ScopeDisabledReason, Task, User } from '../types';
 import { Avatar, Icon, ProjectDot } from './atoms';
 import { SurfaceTopBar } from './MyTasks';
 import TaskDetail from './TaskDetail';
@@ -94,7 +94,7 @@ export default function CalendarView({ projects, users }: Props) {
   async function scopeTaskOnServer(
     id: string,
     tier?: 'fast' | 'smart'
-  ): Promise<{ disabled: boolean }> {
+  ): Promise<{ disabled: boolean; disabled_reason?: ScopeDisabledReason }> {
     const result = await api.scopeTask(id, tier);
     if (!result.disabled && result.task) {
       qc.setQueryData<Task[]>(['tasks', 'all'], (prev) =>
@@ -103,7 +103,7 @@ export default function CalendarView({ projects, users }: Props) {
       qc.invalidateQueries({ queryKey: ['tasks', 'all'] });
       qc.invalidateQueries({ queryKey: ['tasks', result.task.project_id] });
     }
-    return { disabled: result.disabled };
+    return { disabled: result.disabled, disabled_reason: result.scope.disabled_reason };
   }
 
   function selectTask(id: string | null) {

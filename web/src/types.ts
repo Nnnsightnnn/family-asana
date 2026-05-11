@@ -33,6 +33,8 @@ export type MobilizationState = 'unscoped' | 'scoped' | 'dispatched' | 'resolved
 
 export type ScopeAlternate = { label: string; url?: string | null };
 
+export type ScopeDisabledReason = 'no_key' | 'api_error' | 'empty_response' | 'parse_error';
+
 export type ScopeResult = {
   route: Route;
   next_action: string | null;
@@ -42,6 +44,7 @@ export type ScopeResult = {
   confidence: 'low' | 'medium' | 'high';
   model: string;
   disabled?: true;
+  disabled_reason?: ScopeDisabledReason;
 };
 
 export type AdminStats = {

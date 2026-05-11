@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
-import type { Project, ScopeResult, Task, TaskStatus, User } from '../types';
+import type { Project, ScopeDisabledReason, ScopeResult, Task, TaskStatus, User } from '../types';
 import {
   Avatar,
   DueLabel,
@@ -18,8 +18,10 @@ type Props = {
   onClose: () => void;
   onUpdate: (data: Partial<Task>) => void;
   onDelete: () => void;
-  /** Triggers a fresh AI scope of this task; resolves with the disabled flag for UI feedback. */
-  onScope: (tier?: 'fast' | 'smart') => Promise<{ disabled: boolean }>;
+  /** Triggers a fresh AI scope of this task; resolves with the disabled flag (+ reason) for UI feedback. */
+  onScope: (
+    tier?: 'fast' | 'smart'
+  ) => Promise<{ disabled: boolean; disabled_reason?: ScopeDisabledReason }>;
 };
 
 const STATUSES: TaskStatus[] = ['todo', 'doing', 'blocked', 'done'];
@@ -35,6 +37,20 @@ const STATUS_FG: Record<TaskStatus, string> = {
   blocked: '#B36447',
   done: '#6B8A6E',
 };
+
+function scopeDisabledMessage(reason?: ScopeDisabledReason): string {
+  switch (reason) {
+    case 'no_key':
+      return "AI scoping isn't configured on the server. Ask the admin to set OPENROUTER_API_KEY.";
+    case 'parse_error':
+      return 'AI returned an invalid response. Try again, or report this if it persists.';
+    case 'api_error':
+    case 'empty_response':
+      return 'AI scoping is temporarily unavailable. Try again in a moment.';
+    default:
+      return 'AI scoping is unavailable. Try again, or check with the admin.';
+  }
+}
 
 export default function TaskDetail({
   task,
@@ -62,8 +78,8 @@ export default function TaskDetail({
     setScoping(true);
     setScopeError(null);
     try {
-      const { disabled } = await onScope(tier);
-      if (disabled) setScopeError('AI scoping is disabled. Set OPENROUTER_API_KEY to enable.');
+      const { disabled, disabled_reason } = await onScope(tier);
+      if (disabled) setScopeError(scopeDisabledMessage(disabled_reason));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setScopeError(msg);
