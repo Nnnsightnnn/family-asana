@@ -55,6 +55,7 @@ Fill in:
 - `RESEND_FROM=` whatever sender domain you've verified in Resend
 - `APP_URL=http://family-asana` (or whatever you'll name it on Tailscale)
 - `ALLOWED_EMAILS=` comma-separated list of family emails
+- `OPENROUTER_API_KEY=` (optional) enables AI task scoping ("Get help" on the task drawer). Leave blank to gracefully disable; defaults for the fast/smart models in `.env.example` are fine.
 
 ## 6. Run as a Windows Service via NSSM
 

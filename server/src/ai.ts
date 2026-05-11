@@ -48,6 +48,8 @@ const ScopeJsonSchema = z.object({
   confidence: z.enum(['low', 'medium', 'high']),
 });
 
+export type DisabledReason = 'no_key' | 'api_error' | 'empty_response' | 'parse_error';
+
 export type ScopeResult = {
   route: Route;
   next_action: string | null;
@@ -57,6 +59,7 @@ export type ScopeResult = {
   confidence: 'low' | 'medium' | 'high';
   model: string;
   disabled?: true;
+  disabled_reason?: DisabledReason;
 };
 
 const SYSTEM_PROMPT = `You scope household tasks for a small family task manager. Given a task title (and optional description and due date), classify it into ONE of seven routes and produce the next concrete artifact.
@@ -111,7 +114,7 @@ function buildUserMessage(input: {
   return lines.join('\n');
 }
 
-function disabledResult(): ScopeResult {
+function disabledResult(reason: DisabledReason): ScopeResult {
   return {
     route: 'unset',
     next_action: null,
@@ -121,11 +124,19 @@ function disabledResult(): ScopeResult {
     confidence: 'low',
     model: '',
     disabled: true,
+    disabled_reason: reason,
   };
 }
 
 export function isScopingEnabled(): boolean {
   return client !== null;
+}
+
+// Models occasionally wrap JSON output in ```json ... ``` fences despite the system
+// prompt + response_format: json_object asking for raw JSON. Strip them before parsing.
+export function stripJsonFences(raw: string): string {
+  const fenced = raw.trim().match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```\s*$/);
+  return fenced ? fenced[1].trim() : raw;
 }
 
 export async function scopeTask(
@@ -135,7 +146,7 @@ export async function scopeTask(
   if (!client) {
     // eslint-disable-next-line no-console
     console.log(`[ai] scoping disabled (no OPENROUTER_API_KEY); title="${input.title}"`);
-    return disabledResult();
+    return disabledResult('no_key');
   }
 
   const tier = opts?.tier ?? 'fast';
@@ -158,13 +169,13 @@ export async function scopeTask(
     const msg = e instanceof Error ? e.message : String(e);
     // eslint-disable-next-line no-console
     console.warn(`[ai] OpenRouter call failed (${model}): ${msg}`);
-    return { ...disabledResult(), model };
+    return { ...disabledResult('api_error'), model };
   }
 
-  if (!raw) return { ...disabledResult(), model };
+  if (!raw) return { ...disabledResult('empty_response'), model };
 
   try {
-    const parsed = ScopeJsonSchema.parse(JSON.parse(raw));
+    const parsed = ScopeJsonSchema.parse(JSON.parse(stripJsonFences(raw)));
     return {
       route: parsed.route,
       next_action: parsed.next_action,
@@ -178,6 +189,6 @@ export async function scopeTask(
     const msg = e instanceof Error ? e.message : String(e);
     // eslint-disable-next-line no-console
     console.warn(`[ai] failed to parse scope JSON: ${msg}; raw="${raw.slice(0, 300)}"`);
-    return { ...disabledResult(), model };
+    return { ...disabledResult('parse_error'), model };
   }
 }
