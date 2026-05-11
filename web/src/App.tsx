@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { api } from './api';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -12,7 +12,11 @@ function useMe() {
 function VerifyPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const fired = useRef(false);
   useEffect(() => {
+    if (fired.current) return;
+    fired.current = true;
     const token = params.get('token');
     if (!token) {
       navigate('/login', { replace: true });
@@ -20,9 +24,12 @@ function VerifyPage() {
     }
     api
       .verify(token)
-      .then(() => navigate('/', { replace: true }))
+      .then((res) => {
+        qc.setQueryData(['me'], { user: res.user });
+        navigate('/', { replace: true });
+      })
       .catch(() => navigate('/login?error=1', { replace: true }));
-  }, [params, navigate]);
+  }, [params, navigate, qc]);
   return <div className="flex h-full items-center justify-center text-asana-slate">Signing you in…</div>;
 }
 
