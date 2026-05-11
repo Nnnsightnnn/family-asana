@@ -26,6 +26,20 @@ export const api = {
 
   // users
   users: () => http<User[]>('GET', '/api/users'),
+  updateMe: (data: { name?: string; avatar_color?: string }) =>
+    http<User>('PATCH', '/api/users/me', data),
+
+  // installation / first-run setup
+  installationStatus: () =>
+    http<{ setup_required: boolean; setup_completed_at: number | null }>(
+      'GET',
+      '/api/installation/status'
+    ),
+  installationComplete: () =>
+    http<{ setup_required: false; setup_completed_at: number }>(
+      'POST',
+      '/api/installation/complete'
+    ),
 
   // projects
   projects: () => http<Project[]>('GET', '/api/projects'),

@@ -71,3 +71,12 @@ CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
 -- Indexes on mobilization columns are created in db.ts AFTER the
 -- addColumnIfMissing migration runs, so existing DBs without those columns
 -- don't blow up on first boot.
+
+-- Singleton "installation" row — tracks first-run setup state so the
+-- in-app setup wizard only fires once per install.
+CREATE TABLE IF NOT EXISTS installation (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  setup_completed_at INTEGER,
+  setup_started_by TEXT REFERENCES users(id)
+);
+INSERT OR IGNORE INTO installation (id) VALUES (1);
