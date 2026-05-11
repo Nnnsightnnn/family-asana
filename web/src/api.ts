@@ -1,4 +1,4 @@
-import type { Project, ScopeResult, Task, User } from './types';
+import type { AdminStats, AdminUser, Project, ScopeResult, Task, User } from './types';
 
 async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -78,4 +78,10 @@ export const api = {
     const body = (await res.json()) as { task: Task; scope: ScopeResult };
     return { task: body.task, scope: body.scope, disabled: false };
   },
+
+  // admin
+  adminStats: () => http<AdminStats>('GET', '/api/admin/stats'),
+  adminUsers: () => http<AdminUser[]>('GET', '/api/admin/users'),
+  adminRevokeSessions: (userId: string) =>
+    http<{ revoked: number }>('POST', `/api/admin/sessions/${userId}/revoke`),
 };

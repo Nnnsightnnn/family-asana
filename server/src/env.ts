@@ -19,6 +19,12 @@ export const env = {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  // Comma-separated list of email addresses with access to /api/admin/*
+  // and the in-app /admin page. Empty = no admins (admin surface returns 403).
+  ADMIN_EMAILS: (process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
   // OpenRouter — AI task scoping. Empty key = scoping disabled (gracefully degrades).
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? '',
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
