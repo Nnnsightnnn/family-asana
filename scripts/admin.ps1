@@ -45,6 +45,7 @@ $LogDir     = 'C:\family-asana\logs'
 $OutLog     = Join-Path $LogDir 'out.log'
 $ErrLog     = Join-Path $LogDir 'err.log'
 $BackupDir  = 'C:\family-asana\backups'
+$EnvFile    = 'C:\family-asana\server\.env'
 $ServiceNm  = 'FamilyAsana'
 $HealthUrl  = 'http://localhost:4000/health'
 
@@ -59,6 +60,7 @@ function Show-Help {
     Write-Host "  tail-logs [n]       Print last n lines of err.log and out.log (default 50)"
     Write-Host "  backup-now          Online-backup the SQLite DB to $BackupDir"
     Write-Host "  list-users          SELECT name, email FROM users (read-only)"
+    Write-Host "  ai-status           Show whether AI task scoping is configured + which models"
     Write-Host ""
 }
 
@@ -168,6 +170,36 @@ function Invoke-ListUsers {
     }
 }
 
+function Invoke-AiStatus {
+    if (-not (Test-Path $EnvFile)) {
+        Write-Error ".env not found at $EnvFile"
+        exit 1
+    }
+    $lines = Get-Content $EnvFile
+    function Get-EnvValue($name) {
+        $match = $lines | Where-Object { $_ -match "^\s*$name\s*=" } | Select-Object -First 1
+        if ($null -eq $match) { return $null }
+        return ($match -replace "^\s*$name\s*=\s*", '').Trim('"').Trim("'")
+    }
+    $key   = Get-EnvValue 'OPENROUTER_API_KEY'
+    $fast  = Get-EnvValue 'OPENROUTER_FAST_MODEL'
+    $smart = Get-EnvValue 'OPENROUTER_SMART_MODEL'
+    $base  = Get-EnvValue 'OPENROUTER_BASE_URL'
+
+    Write-Host "AI scoping (mobilization):" -ForegroundColor Cyan
+    if ([string]::IsNullOrWhiteSpace($key)) {
+        Write-Host "  status:       DISABLED (OPENROUTER_API_KEY is empty)" -ForegroundColor Yellow
+        Write-Host "  effect:       'Get help' UI hidden; new-task form falls back to plain save."
+    } else {
+        $masked = $key.Substring(0, [Math]::Min(8, $key.Length)) + '...'
+        Write-Host "  status:       ENABLED" -ForegroundColor Green
+        Write-Host "  key:          $masked"
+    }
+    Write-Host "  base url:     $(if ($base) { $base } else { '(default) https://openrouter.ai/api/v1' })"
+    Write-Host "  fast model:   $(if ($fast) { $fast } else { '(default) anthropic/claude-haiku-4.5' })"
+    Write-Host "  smart model:  $(if ($smart) { $smart } else { '(default) anthropic/claude-sonnet-4.6' })"
+}
+
 # --- Dispatch ----------------------------------------------------------------
 switch ($Command) {
     'health'          { Invoke-Health }
@@ -175,5 +207,6 @@ switch ($Command) {
     'tail-logs'       { Invoke-TailLogs -Tail $N }
     'backup-now'      { Invoke-BackupNow }
     'list-users'      { Invoke-ListUsers }
+    'ai-status'       { Invoke-AiStatus }
     default           { Show-Help }
 }

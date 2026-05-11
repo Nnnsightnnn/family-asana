@@ -12,6 +12,7 @@ import { authRoutes } from './routes/auth.js';
 import { projectRoutes } from './routes/projects.js';
 import { taskRoutes } from './routes/tasks.js';
 import { userRoutes } from './routes/users.js';
+import { scopeRoutes } from './routes/scope.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -35,6 +36,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(userRoutes, { prefix: '/api/users' });
   await app.register(projectRoutes, { prefix: '/api/projects' });
   await app.register(taskRoutes, { prefix: '/api/tasks' });
+  await app.register(scopeRoutes, { prefix: '/api/scope' });
 
   // In production, serve the built web SPA from /web/dist with SPA fallback.
   if (!isDev) {

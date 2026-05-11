@@ -5,6 +5,17 @@ import { db, now } from '../db.js';
 import { requireUser } from '../auth.js';
 
 const Status = z.enum(['todo', 'doing', 'done', 'blocked']);
+const Route = z.enum([
+  'unset',
+  'diy',
+  'delegate',
+  'outsource',
+  'buy',
+  'schedule',
+  'research',
+  'drop',
+]);
+const MobilizationState = z.enum(['unscoped', 'scoped', 'dispatched', 'resolved']);
 
 const TaskInput = z.object({
   project_id: z.string().min(1),
@@ -15,6 +26,12 @@ const TaskInput = z.object({
   due_date: z.number().int().nullable().optional(),
   parent_id: z.string().nullable().optional(),
   position: z.number().optional(),
+  // Mobilization (optional on create; persisted via "Save & mobilize" path).
+  route: Route.optional(),
+  mobilization_state: MobilizationState.optional(),
+  next_action: z.string().max(280).nullable().optional(),
+  service_url: z.string().url().max(2000).nullable().optional(),
+  scoped_model: z.string().max(200).nullable().optional(),
 });
 
 const TaskPatch = TaskInput.partial().extend({
@@ -69,10 +86,19 @@ export async function taskRoutes(app: FastifyInstance) {
       .get(body.project_id, status) as { p: number };
     const position = body.position ?? maxPos.p + 1;
 
+    // Mobilization: when the new-task form sends a route, treat the task as
+    // already scoped (mobilization_state='scoped') unless the caller said otherwise.
+    const route = body.route ?? 'unset';
+    const scoped = route !== 'unset';
+    const mobState = body.mobilization_state ?? (scoped ? 'scoped' : 'unscoped');
+    const scopedAt = scoped ? ts : null;
+
     db.prepare(
       `INSERT INTO tasks
-        (id, project_id, title, description, status, assignee_id, due_date, position, parent_id, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (id, project_id, title, description, status, assignee_id, due_date, position, parent_id,
+         route, mobilization_state, next_action, service_url, scoped_at, scoped_model,
+         created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       body.project_id,
@@ -83,6 +109,12 @@ export async function taskRoutes(app: FastifyInstance) {
       body.due_date ?? null,
       position,
       body.parent_id ?? null,
+      route,
+      mobState,
+      body.next_action ?? null,
+      body.service_url ?? null,
+      scopedAt,
+      body.scoped_model ?? null,
       user.id,
       ts,
       ts
@@ -117,13 +149,24 @@ export async function taskRoutes(app: FastifyInstance) {
     if (body.description !== undefined) setField('description', body.description);
     if (body.status !== undefined) {
       setField('status', body.status);
-      setField('completed_at', body.status === 'done' ? now() : null);
+      const completed = body.status === 'done' ? now() : null;
+      setField('completed_at', completed);
+      // Done implicitly resolves the mobilization, unless the caller is sending
+      // an explicit mobilization_state in the same patch.
+      if (body.status === 'done' && body.mobilization_state === undefined) {
+        setField('mobilization_state', 'resolved');
+      }
     }
     if (body.assignee_id !== undefined) setField('assignee_id', body.assignee_id);
     if (body.due_date !== undefined) setField('due_date', body.due_date);
     if (body.position !== undefined) setField('position', body.position);
     if (body.parent_id !== undefined) setField('parent_id', body.parent_id);
     if (body.project_id !== undefined) setField('project_id', body.project_id);
+    if (body.route !== undefined) setField('route', body.route);
+    if (body.mobilization_state !== undefined) setField('mobilization_state', body.mobilization_state);
+    if (body.next_action !== undefined) setField('next_action', body.next_action);
+    if (body.service_url !== undefined) setField('service_url', body.service_url);
+    if (body.scoped_model !== undefined) setField('scoped_model', body.scoped_model);
 
     if (sets.length === 0) return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
 

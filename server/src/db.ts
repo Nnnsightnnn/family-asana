@@ -17,6 +17,38 @@ const schemaPath = join(__dirname, 'schema.sql');
 const schemaSql = readFileSync(schemaPath, 'utf8');
 db.exec(schemaSql);
 
+// Idempotent column-add migration for tables already created on older boots.
+// SQLite's CREATE TABLE IF NOT EXISTS won't add columns to an existing table,
+// so we add them post-hoc and swallow the "duplicate column" error.
+function addColumnIfMissing(table: string, col: string, def: string) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/duplicate column name/i.test(msg)) throw e;
+  }
+}
+
+// Mobilization columns on tasks (added after initial deploy).
+addColumnIfMissing(
+  'tasks',
+  'route',
+  `TEXT NOT NULL DEFAULT 'unset' CHECK (route IN ('unset','diy','delegate','outsource','buy','schedule','research','drop'))`
+);
+addColumnIfMissing(
+  'tasks',
+  'mobilization_state',
+  `TEXT NOT NULL DEFAULT 'unscoped' CHECK (mobilization_state IN ('unscoped','scoped','dispatched','resolved'))`
+);
+addColumnIfMissing('tasks', 'next_action', 'TEXT');
+addColumnIfMissing('tasks', 'service_url', 'TEXT');
+addColumnIfMissing('tasks', 'scoped_at', 'INTEGER');
+addColumnIfMissing('tasks', 'scoped_model', 'TEXT');
+
+// Indexes that depend on the columns above. CREATE INDEX IF NOT EXISTS is safe to re-run.
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_route ON tasks(route);`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_mobilization ON tasks(mobilization_state);`);
+
 export function now(): number {
   return Date.now();
 }

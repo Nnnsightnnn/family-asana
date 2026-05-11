@@ -19,6 +19,12 @@ export const env = {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  // OpenRouter — AI task scoping. Empty key = scoping disabled (gracefully degrades).
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? '',
+  OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
+  OPENROUTER_FAST_MODEL: process.env.OPENROUTER_FAST_MODEL ?? 'anthropic/claude-haiku-4.5',
+  OPENROUTER_SMART_MODEL: process.env.OPENROUTER_SMART_MODEL ?? 'anthropic/claude-sonnet-4.6',
+  OPENROUTER_APP_NAME: process.env.OPENROUTER_APP_NAME ?? 'family-asana',
 };
 
 export const isDev = env.NODE_ENV !== 'production';

@@ -20,6 +20,7 @@ export async function bootTestServer(): Promise<TestServer> {
   process.env.SESSION_SECRET = process.env.SESSION_SECRET ?? 'test-secret-' + nanoid(16);
   process.env.NODE_ENV = 'development';
   process.env.RESEND_API_KEY = ''; // force console-log mailer
+  process.env.OPENROUTER_API_KEY = ''; // force AI scoping disabled (deterministic)
 
   const { buildApp } = await import('../src/app.js');
   const app = await buildApp();

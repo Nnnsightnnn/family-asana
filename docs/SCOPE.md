@@ -44,6 +44,9 @@ Threaded comments on tasks with @mentions. Photo/file uploads (drag-drop, paste,
 **Phase 4 — Polish + notifications (week 5)**
 Web Push setup, email digests, notification preferences per user. Bulk task actions (move, complete, reassign). Keyboard shortcuts (`n` for new task, `/` to search, `j/k` to navigate). Search across all projects. Empty states and Asana-style "you crushed it" celebration when a project hits zero open tasks.
 
+**Phase 5 — Task mobilization**
+A routing layer that takes a task from problem surface to solution surface at the moment of creation. AI scopes each new task into one of seven routes (DIY / delegate / outsource / buy / schedule / research / drop) and attaches the next concrete artifact (deep link to TaskRabbit/Instacart/etc., a delegation suggestion, or a copy-paste research prompt). Existing unscoped tasks get an opt-in "Scope this ✦" button. AI runs server-side via OpenRouter so we can swap between cheap (Haiku) and smart (Sonnet) models per call.
+
 **Out of scope (for now)**
 Forms / intake. Automations / rules. Portfolios. Goals. Reporting dashboards. Custom fields beyond a small fixed set (priority, tag). Native iOS/Android apps — the responsive web app installed as a PWA covers this.
 

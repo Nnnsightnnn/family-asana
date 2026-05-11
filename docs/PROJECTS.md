@@ -43,6 +43,7 @@ For the *why* and *what* of the product, read [`SCOPE.md`](SCOPE.md). For the bi
 - **E — Phase 2: Calendar + recurring** (blocked on Phase 1 done)
 - **F — Phase 3: Comments + attachments** (blocked on Phase 1 done)
 - **G — Phase 4: Notifications** (blocked on Phase 2/3)
+- **H — Phase 5: Task mobilization** — route from problem surface to solution surface (AI scoping)
 
 ---
 
@@ -394,6 +395,34 @@ Blocked until Streams A, B, C are green. Each item is M–L effort. Cards intent
 - **G1 — Web Push** (server-side subscription store; VAPID keys in env)
 - **G2 — Email digests** (daily-summary worker via Resend)
 - **G3 — Notification preferences** (per-user opt-out per category)
+
+---
+
+## Stream H — Phase 5: Task mobilization
+
+The app today is a backlog of problems. Stream H adds a routing layer so a task is born already pointing at its solution — DIY, delegate, outsource, buy, schedule, research, or drop — with the next concrete artifact (deep link, prompt, ask) attached.
+
+AI provider: **OpenRouter** (OpenAI-compatible). Two model slots — fast (`OPENROUTER_FAST_MODEL`, default Haiku 4.5) for every new-task scope; smart (`OPENROUTER_SMART_MODEL`, default Sonnet 4.6) behind a "Think harder ✦" link. Empty `OPENROUTER_API_KEY` cleanly disables the feature.
+
+### H1 — Server foundation
+- 6 new columns on `tasks`: `route`, `mobilization_state`, `next_action`, `service_url`, `scoped_at`, `scoped_model`. Idempotent ALTER-based migration in `db.ts`.
+- `OPENROUTER_*` env. `server/src/ai.ts` (OpenAI SDK pointed at OpenRouter) with the graceful-disabled fallback pattern from `mailer.ts`.
+- `POST /api/scope` (pure scoping for the new-task form) and `POST /api/scope/tasks/:id` (scope + persist on an existing task).
+- `routes/tasks.ts` accepts the 4 mutable mobilization fields on create / patch. `status='done'` implicitly flips `mobilization_state='resolved'`.
+- `test/scope.test.ts` covers the disabled path + storage round-trip.
+
+### H2 — New-task scoping UI
+- `web/src/types.ts` + `web/src/api.ts` extended; `MobilizePanel.tsx` is the shared panel.
+- `QuickAddTask.tsx` calls `/api/scope` on a 450ms debounce; smart-collapses to a tiny chip for confident-DIY classifications; dual buttons "Save & mobilize" / "Just save".
+- `ListView.tsx`'s inline `+ Add` row now opens the modal pre-filled rather than firing a bare create — unifies the scoping path.
+
+### H3 — TaskDetail mobilization surface
+- "Mobilization" section in the drawer. Unscoped tasks get a `✦ Scope this task` button (lazy-backlog flow). Scoped tasks render `MobilizePanel` from the persisted fields with "Think harder ✦" → re-scopes with the smart model.
+- "Mark dispatched" / "Un-dispatch" pill.
+
+### H4 — Ops
+- `scripts/admin.ps1 ai-status` reports whether scoping is configured + which models.
+- `server/.env.example` documents all `OPENROUTER_*` knobs.
 
 ---
 

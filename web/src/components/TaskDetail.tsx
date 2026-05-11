@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
-import type { Project, Task, TaskStatus, User } from '../types';
+import type { Project, ScopeResult, Task, TaskStatus, User } from '../types';
 import {
   Avatar,
   DueLabel,
   Icon,
+  MobilizationStateChip,
   ProjectDot,
   statusLabel,
 } from './atoms';
+import MobilizePanel from './MobilizePanel';
 
 type Props = {
   task: Task;
@@ -16,6 +18,8 @@ type Props = {
   onClose: () => void;
   onUpdate: (data: Partial<Task>) => void;
   onDelete: () => void;
+  /** Triggers a fresh AI scope of this task; resolves with the disabled flag for UI feedback. */
+  onScope: (tier?: 'fast' | 'smart') => Promise<{ disabled: boolean }>;
 };
 
 const STATUSES: TaskStatus[] = ['todo', 'doing', 'blocked', 'done'];
@@ -39,16 +43,49 @@ export default function TaskDetail({
   onClose,
   onUpdate,
   onDelete,
+  onScope,
 }: Props) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [scoping, setScoping] = useState(false);
+  const [scopeError, setScopeError] = useState<string | null>(null);
 
   useEffect(() => {
     setTitle(task.title);
     setDescription(task.description);
     setSavedAt(null);
+    setScopeError(null);
   }, [task.id]);
+
+  async function runScope(tier?: 'fast' | 'smart') {
+    setScoping(true);
+    setScopeError(null);
+    try {
+      const { disabled } = await onScope(tier);
+      if (disabled) setScopeError('AI scoping is disabled. Set OPENROUTER_API_KEY to enable.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setScopeError(msg);
+    } finally {
+      setScoping(false);
+    }
+  }
+
+  // Reconstruct a panel-shaped scope from the task's persisted fields. The
+  // "Re-scope ↻" link can call onScope to refresh against the server.
+  const persistedScope: ScopeResult | null =
+    task.mobilization_state === 'unscoped' || task.route === 'unset'
+      ? null
+      : {
+          route: task.route,
+          next_action: task.next_action,
+          service_url: task.service_url,
+          research_prompt: null, // not persisted; will appear on re-scope only
+          alternates: [],         // not persisted; same
+          confidence: 'medium',
+          model: task.scoped_model ?? '',
+        };
 
   function commitTitle() {
     const v = title.trim();
@@ -199,6 +236,67 @@ export default function TaskDetail({
               day: 'numeric',
             })}
           </span>
+        </div>
+
+        {/* Mobilization */}
+        <div className="mt-5">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-stoop-muted">
+            <span>Mobilization</span>
+            <MobilizationStateChip state={task.mobilization_state} />
+            <span className="flex-1" />
+            {task.mobilization_state === 'scoped' && (
+              <button
+                type="button"
+                className="text-[11px] font-medium normal-case tracking-normal text-stoop-muted hover:text-stoop-ink hover:underline"
+                onClick={() => onUpdate({ mobilization_state: 'dispatched' })}
+              >
+                Mark dispatched
+              </button>
+            )}
+            {task.mobilization_state === 'dispatched' && (
+              <button
+                type="button"
+                className="text-[11px] font-medium normal-case tracking-normal text-stoop-muted hover:text-stoop-ink hover:underline"
+                onClick={() => onUpdate({ mobilization_state: 'scoped' })}
+              >
+                Un-dispatch
+              </button>
+            )}
+          </div>
+
+          {task.mobilization_state === 'unscoped' ? (
+            <div className="rounded-card border border-dashed border-stoop-hairline px-4 py-3.5">
+              <p className="mb-2 text-[13px] text-stoop-muted">
+                This task hasn't been routed yet. Ask the AI to suggest a next move.
+              </p>
+              <button
+                type="button"
+                className="btn-primary text-[12.5px]"
+                onClick={() => runScope('fast')}
+                disabled={scoping}
+              >
+                {scoping ? '✦ Reading task…' : '✦ Scope this task'}
+              </button>
+              {scopeError && (
+                <p className="mt-2 text-[12px]" style={{ color: '#B36447' }}>
+                  {scopeError}
+                </p>
+              )}
+            </div>
+          ) : persistedScope ? (
+            <>
+              <MobilizePanel
+                scope={persistedScope}
+                onThinkHarder={() => runScope('smart')}
+                thinking={scoping}
+              />
+              {scopeError && (
+                <p className="mt-2 text-[12px]" style={{ color: '#B36447' }}>
+                  {scopeError}
+                </p>
+              )}
+            </>
+          ) : null}
         </div>
 
         {/* Notes */}

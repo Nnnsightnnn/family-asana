@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode, SVGProps } from 'react';
-import type { Project, TaskStatus, User } from '../types';
+import type { MobilizationState, Project, Route, TaskStatus, User } from '../types';
 
 // ── Icons (minimal line set) ────────────────────────────────────────
 type IconProps = SVGProps<SVGSVGElement>;
@@ -292,6 +292,81 @@ export function DueLabel({ ts }: { ts: number | null }) {
       }}
     >
       {label}
+    </span>
+  );
+}
+
+// ── Mobilization chips ──────────────────────────────────────────────
+const ROUTE_LABEL: Record<Route, string> = {
+  unset: 'Unscoped',
+  diy: 'DIY',
+  delegate: 'Delegate',
+  outsource: 'Outsource',
+  buy: 'Buy',
+  schedule: 'Schedule',
+  research: 'Research',
+  drop: 'Drop',
+};
+const ROUTE_GLYPH: Record<Route, string> = {
+  unset: '·',
+  diy: '✓',
+  delegate: '↪',
+  outsource: '🔧',
+  buy: '🛒',
+  schedule: '📞',
+  research: '✦',
+  drop: '✕',
+};
+const ROUTE_COLORS: Record<Route, { fg: string; bg: string }> = {
+  unset:     { fg: '#7A7066', bg: '#EFE7DA' },
+  diy:       { fg: '#6B8A6E', bg: '#E2EBE3' },
+  delegate:  { fg: '#5A7A8E', bg: '#E3ECF1' },
+  outsource: { fg: '#874F33', bg: '#F1E0D6' },
+  buy:       { fg: '#7A5C2E', bg: '#F1E7CE' },
+  schedule:  { fg: '#5A5A8E', bg: '#E3E3F1' },
+  research:  { fg: '#6F4A8E', bg: '#EAE0F1' },
+  drop:      { fg: '#8A6B6B', bg: '#EFE3E3' },
+};
+
+export function routeLabel(r: Route): string {
+  return ROUTE_LABEL[r];
+}
+
+export function RouteChip({ route }: { route: Route }) {
+  const c = ROUTE_COLORS[route];
+  return (
+    <span className="chip" style={{ background: c.bg, color: c.fg }}>
+      <span aria-hidden style={{ fontSize: 11 }}>
+        {ROUTE_GLYPH[route]}
+      </span>
+      {ROUTE_LABEL[route]}
+    </span>
+  );
+}
+
+const MOB_LABEL: Record<MobilizationState, string> = {
+  unscoped: 'Unscoped',
+  scoped: 'Scoped',
+  dispatched: 'Dispatched',
+  resolved: 'Resolved',
+};
+
+export function MobilizationStateChip({ state }: { state: MobilizationState }) {
+  if (state === 'unscoped') {
+    return (
+      <span className="chip" style={{ background: 'transparent', color: '#7A7066', borderColor: '#EFE7DA' }}>
+        {MOB_LABEL[state]}
+      </span>
+    );
+  }
+  const tone = state === 'resolved'
+    ? { fg: '#6B8A6E', bg: '#E2EBE3' }
+    : state === 'dispatched'
+      ? { fg: '#5A7A8E', bg: '#E3ECF1' }
+      : { fg: '#874F33', bg: '#F1E0D6' };
+  return (
+    <span className="chip" style={{ background: tone.bg, color: tone.fg }}>
+      {MOB_LABEL[state]}
     </span>
   );
 }

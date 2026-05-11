@@ -91,6 +91,21 @@ export default function CalendarView({ projects, users }: Props) {
     },
   });
 
+  async function scopeTaskOnServer(
+    id: string,
+    tier?: 'fast' | 'smart'
+  ): Promise<{ disabled: boolean }> {
+    const result = await api.scopeTask(id, tier);
+    if (!result.disabled && result.task) {
+      qc.setQueryData<Task[]>(['tasks', 'all'], (prev) =>
+        (prev ?? []).map((t) => (t.id === id ? result.task! : t))
+      );
+      qc.invalidateQueries({ queryKey: ['tasks', 'all'] });
+      qc.invalidateQueries({ queryKey: ['tasks', result.task.project_id] });
+    }
+    return { disabled: result.disabled };
+  }
+
   function selectTask(id: string | null) {
     setParams((p) => {
       const next = new URLSearchParams(p);
@@ -269,6 +284,7 @@ export default function CalendarView({ projects, users }: Props) {
           onClose={() => selectTask(null)}
           onUpdate={(data) => updateTask.mutate({ id: selected.id, data })}
           onDelete={() => deleteTask.mutate(selected.id)}
+          onScope={(tier) => scopeTaskOnServer(selected.id, tier)}
         />
       )}
 

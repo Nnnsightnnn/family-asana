@@ -12,7 +12,8 @@ import {
 type Props = {
   tasks: Task[];
   users: User[];
-  onAdd: (title: string) => void;
+  /** Called with the typed title — opens the rich Add Task modal pre-filled, so scoping happens. */
+  onStartAdd: (title: string) => void;
   onUpdate: (id: string, data: Partial<Task>) => void;
   onSelect: (id: string) => void;
   selectedId: string | null;
@@ -23,7 +24,7 @@ const COLS = '24px minmax(0,1fr) 110px 130px 140px 40px';
 export default function ListView({
   tasks,
   users,
-  onAdd,
+  onStartAdd,
   onUpdate,
   onSelect,
   selectedId,
@@ -34,7 +35,7 @@ export default function ListView({
   function submit() {
     const v = newTitle.trim();
     if (!v) return;
-    onAdd(v);
+    onStartAdd(v);
     setNewTitle('');
   }
 
@@ -81,7 +82,7 @@ export default function ListView({
             <input
               data-shortcut="new-task"
               className="bg-transparent text-sm outline-none placeholder:text-stoop-muted"
-              placeholder="Add a task… (enter to save)"
+              placeholder="Add a task… (enter for the rich form)"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && submit()}

@@ -51,6 +51,15 @@ CREATE TABLE IF NOT EXISTS tasks (
   position    REAL NOT NULL DEFAULT 0, -- fractional indexing for list ordering
   parent_id   TEXT REFERENCES tasks(id) ON DELETE CASCADE, -- subtasks
   completed_at INTEGER,
+  -- Mobilization: route a task from problem surface to solution surface.
+  route       TEXT NOT NULL DEFAULT 'unset'
+              CHECK (route IN ('unset','diy','delegate','outsource','buy','schedule','research','drop')),
+  mobilization_state TEXT NOT NULL DEFAULT 'unscoped'
+              CHECK (mobilization_state IN ('unscoped','scoped','dispatched','resolved')),
+  next_action  TEXT, -- short imperative the AI proposed, e.g. "Call the landlord"
+  service_url  TEXT, -- deep link when route=outsource|buy
+  scoped_at    INTEGER, -- when AI last scoped this task
+  scoped_model TEXT, -- which OpenRouter model produced the scope
   created_by  TEXT NOT NULL REFERENCES users(id),
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
@@ -59,3 +68,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
+-- Indexes on mobilization columns are created in db.ts AFTER the
+-- addColumnIfMissing migration runs, so existing DBs without those columns
+-- don't blow up on first boot.

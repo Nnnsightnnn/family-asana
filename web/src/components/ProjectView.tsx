@@ -18,8 +18,18 @@ export default function ProjectView({ projectId, users }: Props) {
   const qc = useQueryClient();
   const [view, setView] = useState<ViewMode>('list');
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [prefillTitle, setPrefillTitle] = useState<string | undefined>(undefined);
   const [params, setParams] = useSearchParams();
   const selectedId = params.get('task');
+
+  function openQuickAdd(title?: string) {
+    setPrefillTitle(title);
+    setQuickAddOpen(true);
+  }
+  function closeQuickAdd() {
+    setQuickAddOpen(false);
+    setPrefillTitle(undefined);
+  }
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -77,6 +87,21 @@ export default function ProjectView({ projectId, users }: Props) {
     },
   });
 
+  async function scopeTaskOnServer(
+    id: string,
+    tier?: 'fast' | 'smart'
+  ): Promise<{ disabled: boolean }> {
+    const result = await api.scopeTask(id, tier);
+    if (!result.disabled && result.task) {
+      // Patch the cache so the drawer updates without a network round-trip.
+      qc.setQueryData<Task[]>(['tasks', projectId], (prev) =>
+        (prev ?? []).map((t) => (t.id === id ? result.task! : t))
+      );
+      qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+    }
+    return { disabled: result.disabled };
+  }
+
   function select(id: string | null) {
     setParams((p) => {
       const next = new URLSearchParams(p);
@@ -125,16 +150,14 @@ export default function ProjectView({ projectId, users }: Props) {
           done={done}
           total={tasks.length}
           memberCount={users.length}
-          onAdd={() => setQuickAddOpen(true)}
+          onAdd={() => openQuickAdd()}
         />
         <div className="min-h-0 flex-1 overflow-auto">
           {view === 'list' ? (
             <ListView
               tasks={tasks}
               users={users}
-              onAdd={(title) =>
-                createTask.mutate({ project_id: projectId, title })
-              }
+              onStartAdd={(title) => openQuickAdd(title)}
               onUpdate={(id, data) => updateTask.mutate({ id, data })}
               onSelect={select}
               selectedId={selectedId}
@@ -182,6 +205,7 @@ export default function ProjectView({ projectId, users }: Props) {
             onClose={() => select(null)}
             onUpdate={(data) => updateTask.mutate({ id: selected.id, data })}
             onDelete={() => deleteTask.mutate(selected.id)}
+            onScope={(tier) => scopeTaskOnServer(selected.id, tier)}
           />
         </ErrorBoundary>
       )}
@@ -190,8 +214,8 @@ export default function ProjectView({ projectId, users }: Props) {
         <QuickAddTask
           projects={projects.length ? projects : [project]}
           users={users}
-          defaults={{ project_id: projectId }}
-          onClose={() => setQuickAddOpen(false)}
+          defaults={{ project_id: projectId, title: prefillTitle }}
+          onClose={closeQuickAdd}
           onCreate={(input) => createTask.mutate(input)}
         />
       )}

@@ -1,4 +1,4 @@
-import type { Project, Task, User } from './types';
+import type { Project, ScopeResult, Task, User } from './types';
 
 async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -47,4 +47,35 @@ export const api = {
   updateTask: (id: string, data: Partial<Task>) =>
     http<Task>('PATCH', `/api/tasks/${id}`, data),
   deleteTask: (id: string) => http<{ ok: true }>('DELETE', `/api/tasks/${id}`),
+
+  // scoping
+  scope: (input: {
+    title: string;
+    description?: string;
+    due_date?: number | null;
+    tier?: 'fast' | 'smart';
+  }) => http<ScopeResult>('POST', '/api/scope', input),
+  scopeTask: async (
+    id: string,
+    tier?: 'fast' | 'smart'
+  ): Promise<{ task: Task | null; scope: ScopeResult; disabled: boolean }> => {
+    // Custom fetch — the server returns 503 when scoping is disabled, with a
+    // structured body we want to surface as state rather than as a thrown error.
+    const res = await fetch(`/api/scope/tasks/${id}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tier ? { tier } : {}),
+    });
+    if (res.status === 503) {
+      const body = (await res.json()) as { result: ScopeResult };
+      return { task: null, scope: body.result, disabled: true };
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    const body = (await res.json()) as { task: Task; scope: ScopeResult };
+    return { task: body.task, scope: body.scope, disabled: false };
+  },
 };
