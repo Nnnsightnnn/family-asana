@@ -1,4 +1,4 @@
-import type { Project, ScopeResult, Task, User } from './types';
+import type { AdminStats, AdminUser, Project, ScopeResult, Task, User } from './types';
 
 export type TaskSearchHit = Task & {
   project_name: string;
@@ -88,4 +88,10 @@ export const api = {
     const body = (await res.json()) as { task: Task; scope: ScopeResult };
     return { task: body.task, scope: body.scope, disabled: false };
   },
+
+  // admin
+  adminStats: () => http<AdminStats>('GET', '/api/admin/stats'),
+  adminUsers: () => http<AdminUser[]>('GET', '/api/admin/users'),
+  adminRevokeSessions: (userId: string) =>
+    http<{ revoked: number }>('POST', `/api/admin/sessions/${userId}/revoke`),
 };

@@ -44,6 +44,20 @@ export type ScopeResult = {
   disabled?: true;
 };
 
+export type AdminStats = {
+  users_total: number;
+  tasks_total: number;
+  tasks_last_7d: number;
+  tasks_resolved_7d: number;
+  projects_total: number;
+};
+
+export type AdminUser = User & {
+  created_at: number;
+  last_session_at: number | null;
+  active_sessions: number;
+};
+
 export type Task = {
   id: string;
   project_id: string;

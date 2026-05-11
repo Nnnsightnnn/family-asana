@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { api } from './api';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Admin from './pages/Admin';
 
 function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.me() });
@@ -45,6 +46,10 @@ export default function App() {
     <Routes>
       <Route path="/login" element={loggedIn ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/auth/verify" element={<VerifyPage />} />
+      <Route
+        path="/admin"
+        element={loggedIn ? <Admin /> : <Navigate to="/login" replace />}
+      />
       <Route
         path="/*"
         element={loggedIn ? <Dashboard user={data!.user!} /> : <Navigate to="/login" replace />}
