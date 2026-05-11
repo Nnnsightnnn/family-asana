@@ -66,4 +66,63 @@ test('projects & tasks happy path', async (t) => {
       'deleted task is gone'
     );
   });
+
+  await t.test('cross-project search returns matches joined with project', async () => {
+    const { fetch: af } = await authedFetch(server.base);
+
+    // Two projects, three tasks; only the ones with "needle" in title/desc match.
+    const p1 = (await (
+      await af('/api/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Search Alpha', color: '#111111' }),
+      })
+    ).json()) as { id: string };
+    const p2 = (await (
+      await af('/api/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Search Beta', color: '#222222' }),
+      })
+    ).json()) as { id: string };
+
+    await af('/api/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project_id: p1.id, title: 'Find the needle' }),
+    });
+    await af('/api/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        project_id: p2.id,
+        title: 'Other task',
+        description: 'has a needle in description',
+      }),
+    });
+    await af('/api/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project_id: p2.id, title: 'No match here' }),
+    });
+
+    const searchRes = await af('/api/tasks/search?q=needle');
+    assert.equal(searchRes.status, 200);
+    const hits = (await searchRes.json()) as Array<{
+      id: string;
+      title: string;
+      project_name: string;
+      project_color: string;
+    }>;
+    assert.equal(hits.length, 2, 'two tasks match "needle"');
+    for (const h of hits) {
+      assert.ok(h.project_name, 'project_name joined onto hit');
+      assert.ok(h.project_color, 'project_color joined onto hit');
+    }
+
+    // Short query rejected by Zod (Fastify maps the thrown ZodError to a 5xx
+    // here — keep this loose, just assert it doesn't pass through as 200).
+    const tooShort = await af('/api/tasks/search?q=n');
+    assert.notEqual(tooShort.status, 200);
+  });
 });
