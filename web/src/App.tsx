@@ -5,9 +5,20 @@ import { api } from './api';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Admin from './pages/Admin';
+import Setup from './pages/Setup';
+import type { User } from './types';
 
 function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.me() });
+}
+
+function useInstallation(enabled: boolean) {
+  return useQuery({
+    queryKey: ['installation'],
+    queryFn: () => api.installationStatus(),
+    enabled,
+    staleTime: 60_000,
+  });
 }
 
 function VerifyPage() {
@@ -27,11 +38,41 @@ function VerifyPage() {
       .verify(token)
       .then((res) => {
         qc.setQueryData(['me'], { user: res.user });
+        // Recheck setup state after sign-in — the first user to verify
+        // on a fresh install should land at /setup.
+        qc.invalidateQueries({ queryKey: ['installation'] });
         navigate('/', { replace: true });
       })
       .catch(() => navigate('/login?error=1', { replace: true }));
   }, [params, navigate, qc]);
   return <div className="flex h-full items-center justify-center text-asana-slate">Signing you in…</div>;
+}
+
+function AuthedShell({ user }: { user: User }) {
+  // Only ask the server about installation status when we're already signed
+  // in — saves a request on the login screen.
+  const { data: install, isLoading } = useInstallation(true);
+
+  if (isLoading) {
+    return <div className="flex h-full items-center justify-center text-asana-slate">Loading…</div>;
+  }
+
+  if (install?.setup_required) {
+    return (
+      <Routes>
+        <Route path="/setup" element={<Setup user={user} />} />
+        <Route path="/*" element={<Navigate to="/setup" replace />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <Routes>
+      {/* Once setup is done, /setup shouldn't be reachable. */}
+      <Route path="/setup" element={<Navigate to="/" replace />} />
+      <Route path="/*" element={<Dashboard user={user} />} />
+    </Routes>
+  );
 }
 
 export default function App() {
@@ -52,7 +93,7 @@ export default function App() {
       />
       <Route
         path="/*"
-        element={loggedIn ? <Dashboard user={data!.user!} /> : <Navigate to="/login" replace />}
+        element={loggedIn ? <AuthedShell user={data!.user!} /> : <Navigate to="/login" replace />}
       />
     </Routes>
   );
