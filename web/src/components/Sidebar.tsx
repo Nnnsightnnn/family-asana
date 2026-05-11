@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { api } from '../api';
 import type { Project, User } from '../types';
 import { Avatar, Icon, ProjectDot } from './atoms';
+import ProjectMenu from './ProjectMenu';
 
 type Props = {
   projects: Project[];
@@ -44,6 +45,14 @@ export default function Sidebar({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['projects'] });
       setRenamingId(null);
+    },
+  });
+
+  const recolorProject = useMutation({
+    mutationFn: ({ id, color }: { id: string; color: string }) =>
+      api.updateProject(id, { color }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['projects'] });
     },
   });
 
@@ -138,10 +147,13 @@ export default function Sidebar({
                   setMenuId(null);
                   setRenamingId(p.id);
                 }}
-                onDelete={() => {
+                onChangeColor={(color) => {
+                  recolorProject.mutate({ id: p.id, color });
+                }}
+                onArchive={() => {
                   if (
                     confirm(
-                      `Delete "${p.name}"? It will be archived; tasks stay in the database.`
+                      `Archive "${p.name}"? It will be hidden from the sidebar; tasks stay in the database.`
                     )
                   ) {
                     deleteProject.mutate(p.id);
@@ -217,7 +229,8 @@ function ProjectRow({
   onCloseMenu,
   onNavClick,
   onRename,
-  onDelete,
+  onChangeColor,
+  onArchive,
 }: {
   project: Project;
   menuOpen: boolean;
@@ -225,28 +238,17 @@ function ProjectRow({
   onCloseMenu: () => void;
   onNavClick: () => void;
   onRename: () => void;
-  onDelete: () => void;
+  onChangeColor: (color: string) => void;
+  onArchive: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onCloseMenu();
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onCloseMenu();
-    }
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [menuOpen, onCloseMenu]);
-
   return (
-    <div ref={ref} className="group relative">
+    <div
+      className="group relative"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onOpenMenu();
+      }}
+    >
       <NavLink
         to={`/projects/${project.id}`}
         onClick={onNavClick}
@@ -271,39 +273,34 @@ function ProjectRow({
       <button
         type="button"
         aria-label={`More for ${project.name}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          onOpenMenu();
+          if (menuOpen) onCloseMenu();
+          else onOpenMenu();
         }}
         className={clsx(
           'absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-stoop-muted transition-opacity hover:bg-stoop-hairline',
-          menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
         )}
       >
         <Icon.More className="h-3.5 w-3.5" />
       </button>
       {menuOpen && (
-        <div
-          className="absolute right-1 top-[calc(100%-2px)] z-10 w-[140px] overflow-hidden rounded-[10px] border border-stoop-hairline-2 bg-stoop-panel py-1 shadow-soft"
-          role="menu"
-        >
-          <button
-            type="button"
-            className="block w-full px-3 py-1.5 text-left text-[13px] hover:bg-stoop-canvas"
-            onClick={onRename}
-          >
-            Rename
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-stoop-canvas"
-            style={{ color: '#B36447' }}
-            onClick={onDelete}
-          >
-            <Icon.Trash className="h-3 w-3" /> Delete
-          </button>
-        </div>
+        <ProjectMenu
+          project={project}
+          onRename={onRename}
+          onChangeColor={(color) => {
+            onChangeColor(color);
+            onCloseMenu();
+          }}
+          onArchive={() => {
+            onArchive();
+          }}
+          onClose={onCloseMenu}
+        />
       )}
     </div>
   );
