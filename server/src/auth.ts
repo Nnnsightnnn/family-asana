@@ -32,7 +32,10 @@ export function setSessionCookie(reply: FastifyReply, sessionId: string) {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: env.NODE_ENV === 'production',
+    // Browsers refuse to store Secure cookies on http:// origins. Tie this
+    // to the actual URL scheme (HTTPS) rather than NODE_ENV so a same-origin
+    // HTTP deployment (e.g. behind Tailscale only) still works.
+    secure: env.APP_URL.startsWith('https://'),
     maxAge: env.SESSION_DAYS * 24 * 60 * 60,
   });
 }
