@@ -1,0 +1,30 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# vite cache
+*.timestamp-*.mjs
+
+# data
+server/data/
+server/*.db
+server/*.db-journal
+server/*.db-wal
+server/*.db-shm
+server/uploads/
+
+# --- ClaudeKit ---
+.claude/pain-points/ai-error-history.json
+.claude/skills/*/SKILL.md.bak-*
+.claude/skills/*/evals/runs/
+.claude/skills/*/evals/candidates/
+.claude/worktrees/
+.claude/settings.local.json
+# --- /ClaudeKit ---
+

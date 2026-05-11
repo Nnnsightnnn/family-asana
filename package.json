@@ -1,0 +1,12 @@
+{
+  "name": "family-asana",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hosted family task manager",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace server run build && npm --workspace web run build"
+  }
+}

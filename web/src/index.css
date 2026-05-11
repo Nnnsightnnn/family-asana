@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-asana-stone text-asana-ink font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition;
+  }
+  .btn-primary {
+    @apply btn bg-asana-blue text-white hover:bg-[#3a63b8];
+  }
+  .btn-ghost {
+    @apply btn text-asana-ink hover:bg-asana-line;
+  }
+  .input {
+    @apply w-full rounded-md border border-asana-line bg-white px-3 py-2 text-sm
+           outline-none focus:border-asana-blue focus:ring-2 focus:ring-asana-blue/20;
+  }
+}
