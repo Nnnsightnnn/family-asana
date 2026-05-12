@@ -4,6 +4,7 @@ import { api } from '../api';
 import type { Project, Route, ScopeResult, TaskStatus, User } from '../types';
 import { Icon, ProjectDot, RouteChip, statusLabel } from './atoms';
 import MobilizePanel from './MobilizePanel';
+import HelpModal from './HelpModal';
 
 type Defaults = {
   project_id?: string;
@@ -36,6 +37,17 @@ type Props = {
 
 const STATUSES: TaskStatus[] = ['todo', 'doing', 'blocked', 'done'];
 const SCOPE_DEBOUNCE_MS = 450;
+
+// Example prompts that cover the route variety — click to pre-fill the title.
+// Order roughly matches the routes a household sees most often.
+const TITLE_EXAMPLES: Array<{ label: string; title: string }> = [
+  { label: '🔧 Deep clean kitchen', title: 'Deep clean kitchen by Saturday' },
+  { label: '🛒 More air filters', title: 'Buy more HVAC air filters' },
+  { label: '✦ Best baby monitor?', title: 'What is the best baby monitor under $100' },
+  { label: '📞 Schedule physical', title: 'Schedule annual physical with Kaiser' },
+];
+
+const TIP_KEY = 'fa.tip.scoping';
 
 function tsToDateInput(ts: number | null | undefined): string {
   if (!ts) return '';
@@ -74,9 +86,19 @@ export default function QuickAddTask({
   const [status, setStatus] = useState<TaskStatus>(defaults?.status ?? 'todo');
   const [scope, setScope] = useState<ScopeResult | null>(null);
   const [scoping, setScoping] = useState(false);
+  const [showTip, setShowTip] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem(TIP_KEY) !== '1';
+  });
+  const [helpOpen, setHelpOpen] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastScopedTitleRef = useRef<string>('');
+
+  function dismissTip() {
+    localStorage.setItem(TIP_KEY, '1');
+    setShowTip(false);
+  }
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -113,6 +135,9 @@ export default function QuickAddTask({
           if (controller.signal.aborted) return;
           if (result.disabled || result.route === 'unset') {
             setScope(null);
+            // If the server told us AI is disabled, the tutorial tip is
+            // misleading. Stop showing it for this user permanently.
+            if (result.disabled) dismissTip();
           } else {
             setScope(result);
           }
@@ -212,6 +237,15 @@ export default function QuickAddTask({
           <span className="flex-1" />
           <button
             type="button"
+            className="rounded px-1.5 py-0.5 text-[12px] font-medium text-stoop-muted hover:bg-stoop-hairline hover:text-stoop-ink"
+            onClick={() => setHelpOpen(true)}
+            aria-label="How AI scoping works"
+            title="How AI scoping works"
+          >
+            ?
+          </button>
+          <button
+            type="button"
             className="rounded p-1.5 text-stoop-muted hover:bg-stoop-hairline"
             onClick={onClose}
             aria-label="Close"
@@ -219,6 +253,23 @@ export default function QuickAddTask({
             <Icon.X className="h-3.5 w-3.5" />
           </button>
         </div>
+
+        {showTip && (
+          <div className="flex items-start gap-3 border-b border-stoop-hairline bg-stoop-panel-warm/60 px-5 py-2.5 text-[12.5px] text-stoop-muted">
+            <span className="display-italic text-stoop-accent-deep">✦</span>
+            <p className="m-0 flex-1 leading-relaxed">
+              Type a task and the AI suggests a next move — book a service,
+              copy a research prompt, schedule a call, or just save it.
+            </p>
+            <button
+              type="button"
+              onClick={dismissTip}
+              className="shrink-0 text-stoop-muted underline-offset-2 hover:text-stoop-ink hover:underline"
+            >
+              got it
+            </button>
+          </div>
+        )}
 
         <div className="px-5 py-4">
           <input
@@ -231,6 +282,27 @@ export default function QuickAddTask({
             placeholder="What needs doing?"
             className="display w-full bg-transparent text-[20px] leading-[1.25] outline-none placeholder:text-stoop-muted"
           />
+
+          {title.length === 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] uppercase tracking-[0.08em] text-stoop-muted">
+                Try
+              </span>
+              {TITLE_EXAMPLES.map((ex) => (
+                <button
+                  key={ex.label}
+                  type="button"
+                  onClick={() => {
+                    setTitle(ex.title);
+                    titleRef.current?.focus();
+                  }}
+                  className="rounded-full border border-stoop-hairline bg-stoop-panel-warm/60 px-2.5 py-1 text-[12px] text-stoop-muted hover:border-stoop-hairline-2 hover:bg-stoop-panel-warm hover:text-stoop-ink"
+                >
+                  {ex.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-[90px_1fr] gap-x-4 gap-y-3 text-[13.5px]">
             <span className="self-center text-stoop-muted">Project</span>
@@ -366,6 +438,7 @@ export default function QuickAddTask({
           )}
         </div>
       </div>
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

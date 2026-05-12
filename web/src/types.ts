@@ -47,6 +47,35 @@ export type ScopeResult = {
   disabled_reason?: ScopeDisabledReason;
 };
 
+// Free-form planning ("Plan with AI" FAB). One of three shapes plus a
+// disabled variant the server returns when AI isn't configured.
+export type PlanTask = {
+  title: string;
+  route: Exclude<Route, 'unset'>;
+  next_action: string | null;
+  service_url: string | null;
+};
+
+export type PlanResult =
+  | { disabled: true; disabled_reason: ScopeDisabledReason; model: string }
+  | {
+      disabled?: false;
+      model: string;
+      kind: 'task';
+      task: PlanTask & {
+        confidence: 'low' | 'medium' | 'high';
+        research_prompt?: string | null;
+      };
+    }
+  | { disabled?: false; model: string; kind: 'task_list'; tasks: PlanTask[] }
+  | {
+      disabled?: false;
+      model: string;
+      kind: 'project';
+      project: { name: string; color: string };
+      tasks: PlanTask[];
+    };
+
 export type AdminStats = {
   users_total: number;
   tasks_total: number;
@@ -60,6 +89,14 @@ export type AdminUser = User & {
   last_session_at: number | null;
   active_sessions: number;
 };
+
+export type RecurrenceRule =
+  | { kind: 'daily' }
+  | { kind: 'weekdays' }
+  | { kind: 'weekly' }
+  | { kind: 'monthly' }
+  | { kind: 'yearly' }
+  | { kind: 'every'; n: number; unit: 'day' };
 
 export type Task = {
   id: string;
@@ -78,7 +115,44 @@ export type Task = {
   service_url: string | null;
   scoped_at: number | null;
   scoped_model: string | null;
+  /** JSON-encoded RecurrenceRule, or null for one-shot tasks. */
+  recurrence: string | null;
   created_by: string;
   created_at: number;
   updated_at: number;
 };
+
+export function parseRecurrence(raw: string | null): RecurrenceRule | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== 'object' || typeof v.kind !== 'string') return null;
+    if (v.kind === 'every') {
+      if (typeof v.n !== 'number' || v.n < 1 || v.unit !== 'day') return null;
+      return { kind: 'every', n: v.n, unit: 'day' };
+    }
+    if (['daily', 'weekdays', 'weekly', 'monthly', 'yearly'].includes(v.kind)) {
+      return { kind: v.kind } as RecurrenceRule;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function describeRecurrence(rule: RecurrenceRule): string {
+  switch (rule.kind) {
+    case 'daily':
+      return 'Daily';
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekly':
+      return 'Weekly';
+    case 'monthly':
+      return 'Monthly';
+    case 'yearly':
+      return 'Yearly';
+    case 'every':
+      return `Every ${rule.n} days`;
+  }
+}

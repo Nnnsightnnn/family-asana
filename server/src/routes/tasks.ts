@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db, now } from '../db.js';
 import { requireUser } from '../auth.js';
+import { computeNextDue, parseRule, RecurrenceRule } from '../recurrence.js';
 
 const Status = z.enum(['todo', 'doing', 'done', 'blocked']);
 const Route = z.enum([
@@ -32,6 +33,8 @@ const TaskInput = z.object({
   next_action: z.string().max(280).nullable().optional(),
   service_url: z.string().url().max(2000).nullable().optional(),
   scoped_model: z.string().max(200).nullable().optional(),
+  // Recurrence: pass the rule object to set, or null to clear.
+  recurrence: RecurrenceRule.nullable().optional(),
 });
 
 const TaskPatch = TaskInput.partial().extend({
@@ -118,12 +121,19 @@ export async function taskRoutes(app: FastifyInstance) {
     const mobState = body.mobilization_state ?? (scoped ? 'scoped' : 'unscoped');
     const scopedAt = scoped ? ts : null;
 
+    // Recurrence requires a due_date so we have something to step from.
+    if (body.recurrence && body.due_date == null) {
+      reply.code(400);
+      return { error: 'recurrence_requires_due_date' };
+    }
+    const recurrence = body.recurrence ? JSON.stringify(body.recurrence) : null;
+
     db.prepare(
       `INSERT INTO tasks
         (id, project_id, title, description, status, assignee_id, due_date, position, parent_id,
-         route, mobilization_state, next_action, service_url, scoped_at, scoped_model,
+         route, mobilization_state, next_action, service_url, scoped_at, scoped_model, recurrence,
          created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       body.project_id,
@@ -140,6 +150,7 @@ export async function taskRoutes(app: FastifyInstance) {
       body.service_url ?? null,
       scopedAt,
       body.scoped_model ?? null,
+      recurrence,
       user.id,
       ts,
       ts
@@ -159,9 +170,30 @@ export async function taskRoutes(app: FastifyInstance) {
   });
 
   app.patch('/:id', async (req, reply) => {
-    await requireUser(req, reply);
+    const user = await requireUser(req, reply);
     const { id } = req.params as { id: string };
     const body = TaskPatch.parse(req.body);
+
+    // Snapshot pre-update state — we need it to detect the done-flip transition
+    // and to know the previous due_date when materializing the next instance.
+    const prev = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
+      | TaskRow
+      | undefined;
+    if (!prev) {
+      reply.code(404);
+      return { error: 'not_found' };
+    }
+
+    // Validate: setting recurrence requires due_date to exist (either already
+    // on the task, or coming in this same patch).
+    if (body.recurrence) {
+      const futureDue =
+        body.due_date !== undefined ? body.due_date : prev.due_date;
+      if (futureDue == null) {
+        reply.code(400);
+        return { error: 'recurrence_requires_due_date' };
+      }
+    }
 
     const sets: string[] = [];
     const vals: unknown[] = [];
@@ -192,12 +224,28 @@ export async function taskRoutes(app: FastifyInstance) {
     if (body.next_action !== undefined) setField('next_action', body.next_action);
     if (body.service_url !== undefined) setField('service_url', body.service_url);
     if (body.scoped_model !== undefined) setField('scoped_model', body.scoped_model);
+    if (body.recurrence !== undefined) {
+      setField('recurrence', body.recurrence ? JSON.stringify(body.recurrence) : null);
+    }
 
-    if (sets.length === 0) return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+    if (sets.length === 0) return prev;
 
     setField('updated_at', now());
     vals.push(id);
     db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+
+    // Materialize the next instance if this patch transitioned the task to done
+    // AND the post-update task is recurring with a due_date. Read the post-update
+    // row so we use the freshest recurrence/due_date the caller may have sent.
+    const flippedToDone = body.status === 'done' && prev.status !== 'done';
+    if (flippedToDone) {
+      const post = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow;
+      const rule = parseRule(post.recurrence);
+      if (rule && post.due_date != null) {
+        materializeNext(post, rule, user.id);
+      }
+    }
+
     return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
   });
 
@@ -207,4 +255,69 @@ export async function taskRoutes(app: FastifyInstance) {
     db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
     return { ok: true };
   });
+}
+
+type TaskRow = {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  status: string;
+  assignee_id: string | null;
+  due_date: number | null;
+  parent_id: string | null;
+  route: string;
+  next_action: string | null;
+  service_url: string | null;
+  scoped_at: number | null;
+  scoped_model: string | null;
+  recurrence: string | null;
+};
+
+// Insert a fresh task row that "is" the next instance of a recurring task.
+// Carries title/description/project/assignee/recurrence forward; resets status,
+// completed_at, position; advances the due_date via the recurrence rule. The
+// AI scope (route, next_action, service_url) carries forward too — a recurring
+// AI-scoped task should stay scoped without re-asking the model every cycle.
+function materializeNext(prev: TaskRow, rule: RecurrenceRule, userId: string) {
+  if (prev.due_date == null) return;
+  const nextDue = computeNextDue(rule, prev.due_date);
+  const ts = now();
+  const newId = nanoid(12);
+  const maxPos = db
+    .prepare(
+      'SELECT COALESCE(MAX(position), 0) as p FROM tasks WHERE project_id = ? AND status = ?'
+    )
+    .get(prev.project_id, 'todo') as { p: number };
+  const nextPosition = maxPos.p + 1;
+  // Carrying forward scope: a recurring task that's already scoped stays
+  // scoped on each new instance, so users don't see "Scope this" every week.
+  const carriedRoute = prev.route ?? 'unset';
+  const mobState = carriedRoute === 'unset' ? 'unscoped' : 'scoped';
+  db.prepare(
+    `INSERT INTO tasks
+      (id, project_id, title, description, status, assignee_id, due_date, position, parent_id,
+       route, mobilization_state, next_action, service_url, scoped_at, scoped_model, recurrence,
+       created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    newId,
+    prev.project_id,
+    prev.title,
+    prev.description,
+    prev.assignee_id,
+    nextDue,
+    nextPosition,
+    prev.parent_id,
+    carriedRoute,
+    mobState,
+    prev.next_action,
+    prev.service_url,
+    prev.scoped_at,
+    prev.scoped_model,
+    prev.recurrence,
+    userId,
+    ts,
+    ts
+  );
 }

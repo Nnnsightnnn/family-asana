@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   service_url  TEXT, -- deep link when route=outsource|buy
   scoped_at    INTEGER, -- when AI last scoped this task
   scoped_model TEXT, -- which OpenRouter model produced the scope
+  -- Recurrence: JSON-encoded rule. NULL = one-shot. When the task is marked
+  -- done and recurrence is set, the server materializes the next instance
+  -- with a fresh due_date computed from this rule. See server/src/recurrence.ts.
+  recurrence  TEXT,
   created_by  TEXT NOT NULL REFERENCES users(id),
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL

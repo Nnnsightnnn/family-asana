@@ -2,20 +2,8 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
-import { Avatar, Icon } from '../components/atoms';
+import { Avatar, AVATAR_COLORS, Icon, SwatchRow } from '../components/atoms';
 import type { User } from '../types';
-
-// Stoop-palette avatar swatches (warm, muted — match Avatar treatment).
-const AVATAR_COLORS = [
-  '#A86A4B', // clay (accent)
-  '#874F33', // deep clay
-  '#6B8A6E', // sage
-  '#5A7A8E', // slate
-  '#7A5C2E', // ochre
-  '#6F4A8E', // plum
-  '#B36447', // warm red
-  '#5A5A8E', // periwinkle
-];
 
 const PROJECT_COLORS = AVATAR_COLORS;
 
@@ -32,7 +20,10 @@ const VALUES_KEY = 'fa.setup.values';
 function loadStep(): number {
   const raw = localStorage.getItem(STEP_KEY);
   const n = raw ? Number(raw) : 1;
-  if (n === 1 || n === 2 || n === 3) return n;
+  if (n === 1) return 1;
+  // Step 3 used to be the invite-the-family screen; collapse anyone still mid-flow
+  // onto step 2, which is now the final step.
+  if (n === 2 || n === 3) return 2;
   return 1;
 }
 
@@ -116,18 +107,7 @@ export default function Setup({ user }: { user: User }) {
       });
       // Refresh project list so Dashboard shows it immediately after wizard.
       qc.invalidateQueries({ queryKey: ['projects'] });
-      setStep(3);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function finish() {
-    setError(null);
-    setSaving(true);
-    try {
+      // Mark setup complete in the same atomic UI action — no separate invite step.
       await api.installationComplete();
       qc.invalidateQueries({ queryKey: ['installation'] });
       clearStorage();
@@ -199,7 +179,7 @@ export default function Setup({ user }: { user: User }) {
               {error && <p className="mt-4 text-sm text-[#B36447]">{error}</p>}
 
               <div className="mt-7 flex items-center justify-between">
-                <span className="text-xs text-stoop-muted">Step 1 of 3</span>
+                <span className="text-xs text-stoop-muted">Step 1 of 2</span>
                 <button
                   type="submit"
                   className="btn-primary px-5 py-2.5 text-[14.5px]"
@@ -262,19 +242,10 @@ export default function Setup({ user }: { user: User }) {
                   className="btn-primary px-5 py-2.5 text-[14.5px]"
                   disabled={saving || !values.project_name.trim()}
                 >
-                  {saving ? 'Creating…' : 'Next'}
+                  {saving ? 'Finishing…' : 'Finish'}
                 </button>
               </div>
             </form>
-          )}
-
-          {step === 3 && (
-            <InviteStep
-              onDone={finish}
-              onBack={() => setStep(2)}
-              saving={saving}
-              error={error}
-            />
           )}
         </div>
 
@@ -287,7 +258,7 @@ export default function Setup({ user }: { user: User }) {
 }
 
 function Stepper({ step }: { step: number }) {
-  const labels = ['You', 'Project', 'Invite'];
+  const labels = ['You', 'Project'];
   return (
     <ol className="flex items-center gap-3">
       {labels.map((label, i) => {
@@ -326,131 +297,4 @@ function Stepper({ step }: { step: number }) {
   );
 }
 
-function SwatchRow({
-  value,
-  onChange,
-  colors,
-}: {
-  value: string;
-  onChange: (c: string) => void;
-  colors: string[];
-}) {
-  return (
-    <div className="mt-2 flex flex-wrap gap-2.5">
-      {colors.map((c) => {
-        const selected = c.toLowerCase() === value.toLowerCase();
-        return (
-          <button
-            key={c}
-            type="button"
-            aria-label={`Color ${c}`}
-            aria-pressed={selected}
-            onClick={() => onChange(c)}
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-transform hover:scale-105"
-            style={{
-              background: c,
-              boxShadow: selected
-                ? `0 0 0 2px #FAF7F2, 0 0 0 4px ${c}`
-                : 'none',
-            }}
-          >
-            {selected && (
-              <Icon.Check
-                className="h-4 w-4 text-white"
-                style={{ strokeWidth: 2.4 }}
-              />
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
-const INVITE_TEXT = `Hey! Made a little task app for our family — projects, lists, board view, works on your phone. No App Store download for it; it's a website behind our home network.
-
-Two-step setup:
-
-1. Install Tailscale (App Store / Play Store). When you open it, sign in with the link I'm sending you in a sec. That puts you on our family network.
-
-2. Open http://ncit:4000 in Safari (or Chrome). Type your email, tap "Send sign-in link." Check your inbox — tap the link. You're in.
-
-Bookmark it, or tap Share → "Add to Home Screen" and it lives on your dock like a real app.`;
-
-function InviteStep({
-  onDone,
-  onBack,
-  saving,
-  error,
-}: {
-  onDone: () => void;
-  onBack: () => void;
-  saving: boolean;
-  error: string | null;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(INVITE_TEXT);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // fall back silently — the user can manually select & copy
-    }
-  }
-
-  return (
-    <div>
-      <h1 className="display text-[28px] leading-[1.1] m-0">
-        Invite the <span className="display-italic">family.</span>
-      </h1>
-      <p className="mt-3 text-[14.5px] leading-relaxed text-stoop-muted">
-        Each family member needs to be on the household Tailscale first. Then
-        text them this. The message below is copy-paste ready.
-      </p>
-
-      <div className="mt-6 rounded-card border border-stoop-hairline-2 bg-stoop-panel-warm p-4">
-        <pre className="m-0 whitespace-pre-wrap font-sans text-[13.5px] leading-relaxed text-stoop-ink-soft">
-          {INVITE_TEXT}
-        </pre>
-      </div>
-
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          className="btn-outline px-3 py-2 text-[13.5px]"
-          onClick={copy}
-        >
-          {copied ? 'Copied' : 'Copy message'}
-        </button>
-      </div>
-
-      <p className="mt-5 text-[13px] leading-relaxed text-stoop-muted">
-        Skip this for now if you want — you can grab the invite text again any
-        time. Click "I'm done" when you're ready to head into the app.
-      </p>
-
-      {error && <p className="mt-4 text-sm text-[#B36447]">{error}</p>}
-
-      <div className="mt-6 flex items-center justify-between">
-        <button
-          type="button"
-          className="btn-ghost px-3 py-2 text-[14px]"
-          onClick={onBack}
-          disabled={saving}
-        >
-          Back
-        </button>
-        <button
-          type="button"
-          className="btn-primary px-5 py-2.5 text-[14.5px]"
-          onClick={onDone}
-          disabled={saving}
-        >
-          {saving ? 'Finishing…' : "I'm done"}
-        </button>
-      </div>
-    </div>
-  );
-}

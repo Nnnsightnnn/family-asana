@@ -44,6 +44,7 @@ addColumnIfMissing('tasks', 'next_action', 'TEXT');
 addColumnIfMissing('tasks', 'service_url', 'TEXT');
 addColumnIfMissing('tasks', 'scoped_at', 'INTEGER');
 addColumnIfMissing('tasks', 'scoped_model', 'TEXT');
+addColumnIfMissing('tasks', 'recurrence', 'TEXT');
 
 // Indexes that depend on the columns above. CREATE INDEX IF NOT EXISTS is safe to re-run.
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_route ON tasks(route);`);

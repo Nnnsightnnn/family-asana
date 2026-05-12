@@ -15,6 +15,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import clsx from 'clsx';
 import type { Project, Task, TaskStatus, User } from '../types';
+import type { TaskWrite } from '../api';
 import { Avatar, DueLabel, Icon, ProjectDot } from './atoms';
 
 type Props = {
@@ -22,7 +23,7 @@ type Props = {
   users: User[];
   project: Project;
   onAdd: (title: string) => void;
-  onUpdate: (id: string, data: Partial<Task>) => void;
+  onUpdate: (id: string, data: TaskWrite) => void;
   onSelect: (id: string) => void;
 };
 

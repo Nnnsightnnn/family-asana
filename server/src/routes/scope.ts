@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db, now } from '../db.js';
 import { requireUser } from '../auth.js';
-import { scopeTask } from '../ai.js';
+import { planFromText, scopeTask } from '../ai.js';
 
 const ScopeInput = z.object({
   title: z.string().min(1).max(300),
@@ -15,6 +15,12 @@ const ScopeTaskParams = z.object({
   tier: z.enum(['fast', 'smart']).optional(),
 });
 
+const PlanInput = z.object({
+  text: z.string().min(5).max(2000),
+  project_id: z.string().min(1).nullable().optional(),
+  tier: z.enum(['fast', 'smart']).optional(),
+});
+
 export async function scopeRoutes(app: FastifyInstance) {
   // Live scoping for the new-task form (no task exists yet).
   app.post('/', async (req, reply) => {
@@ -24,6 +30,22 @@ export async function scopeRoutes(app: FastifyInstance) {
       { title: body.title, description: body.description, due_date: body.due_date ?? null },
       { tier: body.tier }
     );
+    return result;
+  });
+
+  // Free-form planning. Takes a paragraph, returns either a single task,
+  // a task list, or a whole project + tasks. Does NOT create rows — that's
+  // the client's job once the user confirms the preview.
+  app.post('/plan', async (req, reply) => {
+    await requireUser(req, reply);
+    const body = PlanInput.parse(req.body);
+    const result = await planFromText(
+      { text: body.text, project_id: body.project_id ?? null },
+      { tier: body.tier }
+    );
+    if ('disabled' in result && result.disabled) {
+      reply.code(200); // surface disabled-ness in the body, not as an HTTP error
+    }
     return result;
   });
 

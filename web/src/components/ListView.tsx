@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import type { Task, TaskStatus, User } from '../types';
+import { describeRecurrence, parseRecurrence } from '../types';
+import type { TaskWrite } from '../api';
 import {
   Avatar,
   DueLabel,
@@ -14,7 +16,7 @@ type Props = {
   users: User[];
   /** Called with the typed title — opens the rich Add Task modal pre-filled, so scoping happens. */
   onStartAdd: (title: string) => void;
-  onUpdate: (id: string, data: Partial<Task>) => void;
+  onUpdate: (id: string, data: TaskWrite) => void;
   onSelect: (id: string) => void;
   selectedId: string | null;
 };
@@ -108,7 +110,7 @@ function Row({
   selected: boolean;
   last: boolean;
   onSelect: () => void;
-  onUpdate: (data: Partial<Task>) => void;
+  onUpdate: (data: TaskWrite) => void;
 }) {
   const assignee = users.find((u) => u.id === task.assignee_id);
   const done = task.status === 'done';
@@ -140,11 +142,12 @@ function Row({
       </span>
       <div
         className={clsx(
-          'min-w-0 truncate text-sm',
+          'flex min-w-0 items-center gap-1.5 text-sm',
           done && 'line-through'
         )}
       >
-        {task.title}
+        <span className="min-w-0 truncate">{task.title}</span>
+        <RepeatBadge recurrence={task.recurrence} />
       </div>
       <span onClick={cycleStatus} className="cursor-pointer">
         <StatusChip status={task.status} />
@@ -162,5 +165,19 @@ function Row({
       </div>
       <Icon.More className="h-4 w-4 text-stoop-muted" />
     </div>
+  );
+}
+
+function RepeatBadge({ recurrence }: { recurrence: string | null }) {
+  const rule = parseRecurrence(recurrence);
+  if (!rule) return null;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center text-stoop-muted"
+      title={`Repeats: ${describeRecurrence(rule)}`}
+      aria-label={`Repeats: ${describeRecurrence(rule)}`}
+    >
+      <Icon.Repeat className="h-3 w-3" />
+    </span>
   );
 }

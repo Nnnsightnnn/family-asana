@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { api } from '../api';
+import { api, type TaskWrite } from '../api';
 import type { ScopeDisabledReason, Task, User } from '../types';
 import { Icon } from './atoms';
 import ListView from './ListView';
@@ -44,7 +44,7 @@ export default function ProjectView({ projectId, users }: Props) {
   });
 
   const createTask = useMutation({
-    mutationFn: (input: Partial<Task> & { project_id: string; title: string }) =>
+    mutationFn: (input: TaskWrite & { project_id: string; title: string }) =>
       api.createTask(input),
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['tasks', created.project_id] });
@@ -53,7 +53,7 @@ export default function ProjectView({ projectId, users }: Props) {
   });
 
   const updateTask = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) =>
+    mutationFn: ({ id, data }: { id: string; data: TaskWrite }) =>
       api.updateTask(id, data),
     onMutate: async ({ id, data }) => {
       await qc.cancelQueries({ queryKey: ['tasks', projectId] });
@@ -61,7 +61,18 @@ export default function ProjectView({ projectId, users }: Props) {
       if (previous) {
         qc.setQueryData<Task[]>(
           ['tasks', projectId],
-          previous.map((t) => (t.id === id ? { ...t, ...data } : t))
+          previous.map((t) => {
+            if (t.id !== id) return t;
+            // recurrence is parsed-rule on the wire but stringified-JSON on the
+            // cached row, so re-encode it to keep the cache consistent during
+            // the optimistic window.
+            const { recurrence, ...rest } = data;
+            const merged = { ...t, ...rest } as Task;
+            if ('recurrence' in data) {
+              merged.recurrence = recurrence ? JSON.stringify(recurrence) : null;
+            }
+            return merged;
+          })
         );
       }
       return { previous };

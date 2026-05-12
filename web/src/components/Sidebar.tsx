@@ -5,10 +5,15 @@ import clsx from 'clsx';
 import { api } from '../api';
 import type { Project, User } from '../types';
 import { Avatar, Icon, ProjectDot } from './atoms';
+import HouseholdMenu from './HouseholdMenu';
 import ProjectMenu from './ProjectMenu';
+import ProfileModal from './ProfileModal';
+import UserMenu from './UserMenu';
+import HelpModal from './HelpModal';
 
 type Props = {
   projects: Project[];
+  users: User[];
   currentUser: User;
   onLogout: () => void;
   open: boolean;
@@ -17,6 +22,7 @@ type Props = {
 
 export default function Sidebar({
   projects,
+  users,
   currentUser,
   onLogout,
   open,
@@ -29,6 +35,10 @@ export default function Sidebar({
   const [name, setName] = useState('');
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [householdMenuOpen, setHouseholdMenuOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const createProject = useMutation({
     mutationFn: (n: string) => api.createProject({ name: n }),
@@ -65,8 +75,6 @@ export default function Sidebar({
     },
   });
 
-  const memberCount = 3; // Phase 1: household roster is small; this surfaces context only.
-
   return (
     <aside
       className={clsx(
@@ -75,23 +83,44 @@ export default function Sidebar({
       )}
     >
       {/* House identity */}
-      <div className="flex items-center gap-2.5 pb-2.5">
-        <span className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-stoop-accent text-white">
-          <Icon.Home className="h-3.5 w-3.5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] font-medium leading-tight">Family</div>
-          <div className="text-[11.5px] text-stoop-muted">
-            {memberCount} of us
-          </div>
+      <div className="relative pb-2.5">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setHouseholdMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={householdMenuOpen}
+            className="-mx-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] px-1 py-1 text-left transition-colors hover:bg-stoop-hairline/50"
+          >
+            <span className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-lg bg-stoop-accent text-white">
+              <Icon.Home className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13.5px] font-medium leading-tight">Family</div>
+              <div className="text-[11.5px] text-stoop-muted">
+                {users.length} of us
+              </div>
+            </div>
+          </button>
+          <button
+            className="text-stoop-muted hover:text-stoop-ink md:hidden"
+            onClick={onClose}
+            aria-label="Close menu"
+          >
+            <Icon.X className="h-4 w-4" />
+          </button>
         </div>
-        <button
-          className="text-stoop-muted hover:text-stoop-ink md:hidden"
-          onClick={onClose}
-          aria-label="Close menu"
-        >
-          <Icon.X className="h-4 w-4" />
-        </button>
+        {householdMenuOpen && (
+          <HouseholdMenu
+            users={users}
+            currentUser={currentUser}
+            onClose={() => setHouseholdMenuOpen(false)}
+            onNavigate={() => {
+              setHouseholdMenuOpen(false);
+              onClose();
+            }}
+          />
+        )}
       </div>
 
       {/* Top nav */}
@@ -209,15 +238,43 @@ export default function Sidebar({
             {currentUser.email}
           </div>
         </div>
-        <button
-          className="rounded p-1.5 text-stoop-muted hover:bg-stoop-hairline"
-          onClick={onLogout}
-          aria-label="Sign out"
-          title="Sign out"
-        >
-          <Icon.Settings className="h-3.5 w-3.5" />
-        </button>
+        <div className="relative">
+          <button
+            className="rounded p-1.5 text-stoop-muted hover:bg-stoop-hairline"
+            onClick={() => setUserMenuOpen((v) => !v)}
+            aria-label="Account menu"
+            title="Account"
+            aria-haspopup="menu"
+            aria-expanded={userMenuOpen}
+          >
+            <Icon.Settings className="h-3.5 w-3.5" />
+          </button>
+          {userMenuOpen && (
+            <UserMenu
+              onEditProfile={() => {
+                setUserMenuOpen(false);
+                setProfileOpen(true);
+              }}
+              onHelp={() => {
+                setUserMenuOpen(false);
+                setHelpOpen(true);
+              }}
+              onSignOut={() => {
+                setUserMenuOpen(false);
+                onLogout();
+              }}
+              onClose={() => setUserMenuOpen(false)}
+            />
+          )}
+        </div>
       </div>
+      {profileOpen && (
+        <ProfileModal
+          user={currentUser}
+          onClose={() => setProfileOpen(false)}
+        />
+      )}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </aside>
   );
 }

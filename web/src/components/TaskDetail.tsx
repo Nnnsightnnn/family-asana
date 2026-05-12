@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
-import type { Project, ScopeDisabledReason, ScopeResult, Task, TaskStatus, User } from '../types';
+import type {
+  Project,
+  RecurrenceRule,
+  ScopeDisabledReason,
+  ScopeResult,
+  Task,
+  TaskStatus,
+  User,
+} from '../types';
+import { describeRecurrence, parseRecurrence } from '../types';
+import type { TaskWrite } from '../api';
 import {
   Avatar,
   DueLabel,
@@ -11,12 +21,27 @@ import {
 } from './atoms';
 import MobilizePanel from './MobilizePanel';
 
+const RECURRENCE_PRESETS: { value: string; label: string; rule: RecurrenceRule | null }[] = [
+  { value: 'off', label: 'Off', rule: null },
+  { value: 'daily', label: 'Daily', rule: { kind: 'daily' } },
+  { value: 'weekdays', label: 'Weekdays', rule: { kind: 'weekdays' } },
+  { value: 'weekly', label: 'Weekly', rule: { kind: 'weekly' } },
+  { value: 'monthly', label: 'Monthly', rule: { kind: 'monthly' } },
+  { value: 'yearly', label: 'Yearly', rule: { kind: 'yearly' } },
+];
+
+function ruleToPresetValue(rule: RecurrenceRule | null): string {
+  if (!rule) return 'off';
+  if (rule.kind === 'every') return 'every';
+  return rule.kind;
+}
+
 type Props = {
   task: Task;
   project: Project;
   users: User[];
   onClose: () => void;
-  onUpdate: (data: Partial<Task>) => void;
+  onUpdate: (data: TaskWrite) => void;
   onDelete: () => void;
   /** Triggers a fresh AI scope of this task; resolves with the disabled flag (+ reason) for UI feedback. */
   onScope: (
@@ -219,6 +244,15 @@ export default function TaskDetail({
             )}
           </div>
 
+          <span className="text-stoop-muted">Repeat</span>
+          <div className="flex items-center gap-2">
+            <Icon.Repeat className="h-3.5 w-3.5 text-stoop-muted" />
+            <RecurrencePicker
+              task={task}
+              onChange={(rule) => onUpdate({ recurrence: rule })}
+            />
+          </div>
+
           <span className="text-stoop-muted">Status</span>
           <div className="flex flex-wrap gap-1.5">
             {STATUSES.map((s) => {
@@ -401,5 +435,58 @@ function StatusDot({ status }: { status: TaskStatus }) {
     >
       {inner}
     </span>
+  );
+}
+
+function RecurrencePicker({
+  task,
+  onChange,
+}: {
+  task: Task;
+  onChange: (rule: RecurrenceRule | null) => void;
+}) {
+  const current = parseRecurrence(task.recurrence);
+  const value = ruleToPresetValue(current);
+  const noDueDate = task.due_date == null;
+
+  // "every:N" isn't selectable from the preset list (no UI for choosing N yet),
+  // but if a task already has it we render its description as a disabled hint
+  // so the user sees what's set rather than an empty Off.
+  if (current && current.kind === 'every') {
+    return (
+      <span className="text-[13px] text-stoop-ink-soft">
+        {describeRecurrence(current)}{' '}
+        <button
+          type="button"
+          className="ml-1 text-[12px] text-stoop-muted underline-offset-2 hover:text-stoop-ink hover:underline"
+          onClick={() => onChange(null)}
+        >
+          Turn off
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        className="bg-transparent text-[13.5px] outline-none disabled:text-stoop-muted"
+        value={value}
+        disabled={noDueDate && value === 'off'}
+        onChange={(e) => {
+          const preset = RECURRENCE_PRESETS.find((p) => p.value === e.target.value);
+          onChange(preset?.rule ?? null);
+        }}
+      >
+        {RECURRENCE_PRESETS.map((p) => (
+          <option key={p.value} value={p.value}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+      {noDueDate && value === 'off' && (
+        <span className="text-[11.5px] text-stoop-muted">Set a due date first</span>
+      )}
+    </div>
   );
 }

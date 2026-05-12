@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import type { Project, Task, User } from '../types';
+import { describeRecurrence, parseRecurrence } from '../types';
 import {
   Avatar,
   DueLabel,
@@ -14,9 +15,18 @@ import {
 type Props = { user: User; users: User[]; projects: Project[] };
 
 export default function MyTasks({ user, projects }: Props) {
+  const qc = useQueryClient();
   const { data: tasks = [] } = useQuery({
     queryKey: ['my-tasks', user.id],
     queryFn: () => api.tasks({ mine: true }),
+  });
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => api.deleteTask(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-tasks', user.id] });
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+    },
   });
 
   const open = tasks.filter((t) => t.status !== 'done');
@@ -89,27 +99,28 @@ export default function MyTasks({ user, projects }: Props) {
               <div className="flex flex-col gap-[22px]">
                 {[...byProject.entries()].map(([pid, items]) => {
                   const project = projects.find((p) => p.id === pid);
-                  if (!project) return null;
+                  const label = project?.name ?? '(archived project)';
                   return (
                     <section key={pid}>
                       <Link
-                        to={`/projects/${pid}`}
+                        to={project ? `/projects/${pid}` : '#'}
                         className="mb-2 flex items-center gap-2 hover:underline"
                       >
-                        <ProjectDot project={project} size={9} />
-                        <span className="text-[13px] font-medium">
-                          {project.name}
-                        </span>
+                        {project ? (
+                          <ProjectDot project={project} size={9} />
+                        ) : (
+                          <span className="inline-block h-[9px] w-[9px] rounded-full bg-stoop-muted/40" />
+                        )}
+                        <span className="text-[13px] font-medium">{label}</span>
                         <span className="text-xs text-stoop-muted">
                           · {items.length}
                         </span>
                       </Link>
                       <div className="overflow-hidden rounded-card border border-stoop-hairline bg-stoop-panel">
                         {items.map((t, i) => (
-                          <Link
+                          <div
                             key={t.id}
-                            to={`/projects/${pid}?task=${t.id}`}
-                            className="flex items-center gap-3 px-4 py-3 hover:bg-stoop-canvas"
+                            className="group relative"
                             style={{
                               borderBottom:
                                 i === items.length - 1
@@ -117,13 +128,43 @@ export default function MyTasks({ user, projects }: Props) {
                                   : '1px solid #EFE7DA',
                             }}
                           >
-                            <StatusCheckbox status={t.status} />
-                            <div className="min-w-0 flex-1 text-sm">
-                              {t.title}
-                            </div>
-                            <DueLabel ts={t.due_date} />
-                            <Avatar user={user} size={22} />
-                          </Link>
+                            <Link
+                              to={project ? `/projects/${pid}?task=${t.id}` : '#'}
+                              className="flex items-center gap-3 px-4 py-3 hover:bg-stoop-canvas"
+                            >
+                              <StatusCheckbox status={t.status} />
+                              <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
+                                <span className="min-w-0 truncate">{t.title}</span>
+                                {(() => {
+                                  const rule = parseRecurrence(t.recurrence);
+                                  if (!rule) return null;
+                                  return (
+                                    <Icon.Repeat
+                                      className="h-3 w-3 shrink-0 text-stoop-muted"
+                                      aria-label={`Repeats: ${describeRecurrence(rule)}`}
+                                    />
+                                  );
+                                })()}
+                              </div>
+                              <DueLabel ts={t.due_date} />
+                              <span className="inline-flex h-[22px] w-[22px] items-center justify-center transition-opacity group-hover:opacity-0">
+                                <Avatar user={user} size={22} />
+                              </span>
+                            </Link>
+                            <button
+                              type="button"
+                              aria-label={`Delete "${t.title}"`}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1.5 text-stoop-muted opacity-0 transition-opacity hover:bg-stoop-hairline hover:text-stoop-ink focus:opacity-100 group-hover:opacity-100"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (confirm(`Delete "${t.title}"?`))
+                                  deleteTask.mutate(t.id);
+                              }}
+                            >
+                              <Icon.Trash className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </section>
@@ -174,14 +215,6 @@ export function SurfaceTopBar({
         {subtle && (
           <div className="mt-0.5 text-xs text-stoop-muted">{subtle}</div>
         )}
-      </div>
-      <div className="flex-1" />
-      <div className="flex min-w-[260px] items-center gap-2 rounded-[12px] bg-stoop-panel-warm px-3 py-2 text-stoop-muted">
-        <Icon.Search className="h-[15px] w-[15px]" />
-        <span className="text-[13px]">Search tasks & projects</span>
-        <span className="ml-auto rounded border border-stoop-hairline bg-stoop-canvas px-1.5 py-px text-[11px]">
-          ⌘K
-        </span>
       </div>
     </header>
   );

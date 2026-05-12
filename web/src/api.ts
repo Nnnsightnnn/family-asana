@@ -1,8 +1,24 @@
-import type { AdminStats, AdminUser, Project, ScopeResult, Task, User } from './types';
+import type {
+  AdminStats,
+  AdminUser,
+  PlanResult,
+  Project,
+  RecurrenceRule,
+  ScopeResult,
+  Task,
+  User,
+} from './types';
 
 export type TaskSearchHit = Task & {
   project_name: string;
   project_color: string;
+};
+
+// recurrence is stored as a JSON string on Task but the API accepts the parsed
+// rule object on write. Bake that asymmetry into the patch type so callers
+// can pass a typed rule rather than fiddling with JSON.stringify themselves.
+export type TaskWrite = Partial<Omit<Task, 'recurrence'>> & {
+  recurrence?: RecurrenceRule | null;
 };
 
 async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -66,9 +82,9 @@ export const api = {
     if (limit != null) qs.set('limit', String(limit));
     return http<TaskSearchHit[]>('GET', `/api/tasks/search?${qs.toString()}`);
   },
-  createTask: (data: Partial<Task> & { project_id: string; title: string }) =>
+  createTask: (data: TaskWrite & { project_id: string; title: string }) =>
     http<Task>('POST', '/api/tasks', data),
-  updateTask: (id: string, data: Partial<Task>) =>
+  updateTask: (id: string, data: TaskWrite) =>
     http<Task>('PATCH', `/api/tasks/${id}`, data),
   deleteTask: (id: string) => http<{ ok: true }>('DELETE', `/api/tasks/${id}`),
 
@@ -79,6 +95,11 @@ export const api = {
     due_date?: number | null;
     tier?: 'fast' | 'smart';
   }) => http<ScopeResult>('POST', '/api/scope', input),
+  plan: (input: {
+    text: string;
+    project_id?: string | null;
+    tier?: 'fast' | 'smart';
+  }) => http<PlanResult>('POST', '/api/scope/plan', input),
   scopeTask: async (
     id: string,
     tier?: 'fast' | 'smart'

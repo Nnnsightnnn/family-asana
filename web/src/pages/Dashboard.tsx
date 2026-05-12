@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import type { User } from '../types';
@@ -9,6 +9,8 @@ import MyTasks from '../components/MyTasks';
 import CalendarView from '../components/CalendarView';
 import { Icon } from '../components/atoms';
 import SearchBar from '../components/SearchBar';
+import Fab from '../components/Fab';
+import PlanWithAI from '../components/PlanWithAI';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 
 export default function Dashboard({ user }: { user: User }) {
@@ -62,6 +64,24 @@ export default function Dashboard({ user }: { user: User }) {
     queryFn: api.users,
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const location = useLocation();
+
+  // If the user is currently inside a project view, default the FAB modal to
+  // that project. Otherwise fall back to the first project they have.
+  const projectFromUrl = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
+  const defaultProjectId =
+    projectFromUrl && projects.some((p) => p.id === projectFromUrl)
+      ? projectFromUrl
+      : projects[0]?.id;
+
+  function onPlanCreated(_info: { taskIds: string[]; projectId: string }) {
+    // Wide invalidation — tasks may have landed in a brand-new project, the
+    // current project, or any other. Cheap to refetch everything queried.
+    qc.invalidateQueries({ queryKey: ['projects'] });
+    qc.invalidateQueries({ queryKey: ['tasks'] });
+    qc.invalidateQueries({ queryKey: ['my-tasks'] });
+  }
 
   async function logout() {
     await api.logout();
@@ -79,6 +99,7 @@ export default function Dashboard({ user }: { user: User }) {
       )}
       <Sidebar
         projects={projects}
+        users={users}
         currentUser={user}
         onLogout={logout}
         open={sidebarOpen}
@@ -126,6 +147,19 @@ export default function Dashboard({ user }: { user: User }) {
           </Routes>
         </div>
       </main>
+
+      {/* Global AI-forward FAB. Always available, even pre-project — PlanWithAI
+          gracefully handles the "no projects" case by creating one for you. */}
+      <Fab onClick={() => setPlanOpen(true)} />
+      {planOpen && (
+        <PlanWithAI
+          projects={projects}
+          users={users}
+          defaultProjectId={defaultProjectId ?? ''}
+          onClose={() => setPlanOpen(false)}
+          onCreated={onPlanCreated}
+        />
+      )}
     </div>
   );
 }

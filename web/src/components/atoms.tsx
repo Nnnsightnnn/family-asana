@@ -111,6 +111,14 @@ export const Icon = {
     </>
   ),
   Filter: makeIcon(<path d="M4 5h16l-6 8v6l-4-2v-4z" />),
+  Repeat: makeIcon(
+    <>
+      <path d="M4 12V9a3 3 0 0 1 3-3h11" />
+      <path d="m15 3 3 3-3 3" />
+      <path d="M20 12v3a3 3 0 0 1-3 3H6" />
+      <path d="m9 21-3-3 3-3" />
+    </>
+  ),
 };
 
 // ── Atoms ───────────────────────────────────────────────────────────
@@ -151,6 +159,62 @@ export function ProjectDot({ project, size = 10 }: { project: Pick<Project, 'col
         background: project.color,
       }}
     />
+  );
+}
+
+// ── Avatar color palette ─────────────────────────────────────────────
+// Stoop-palette avatar swatches (warm, muted — match Avatar treatment).
+// Setup wizard and the in-app profile editor both pick from this set so
+// colors stay in sync visually.
+export const AVATAR_COLORS = [
+  '#A86A4B', // clay (accent)
+  '#874F33', // deep clay
+  '#6B8A6E', // sage
+  '#5A7A8E', // slate
+  '#7A5C2E', // ochre
+  '#6F4A8E', // plum
+  '#B36447', // warm red
+  '#5A5A8E', // periwinkle
+];
+
+export function SwatchRow({
+  value,
+  onChange,
+  colors,
+}: {
+  value: string;
+  onChange: (c: string) => void;
+  colors: string[];
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2.5">
+      {colors.map((c) => {
+        const selected = c.toLowerCase() === value.toLowerCase();
+        return (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Color ${c}`}
+            aria-pressed={selected}
+            onClick={() => onChange(c)}
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-transform hover:scale-105"
+            style={{
+              background: c,
+              boxShadow: selected
+                ? `0 0 0 2px #FAF7F2, 0 0 0 4px ${c}`
+                : 'none',
+            }}
+          >
+            {selected && (
+              <Icon.Check
+                className="h-4 w-4 text-white"
+                style={{ strokeWidth: 2.4 }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -327,6 +391,17 @@ const ROUTE_COLORS: Record<Route, { fg: string; bg: string }> = {
   research:  { fg: '#6F4A8E', bg: '#EAE0F1' },
   drop:      { fg: '#8A6B6B', bg: '#EFE3E3' },
 };
+// One-line description surfaced via native browser tooltip on hover / long-press.
+const ROUTE_DESC: Record<Route, string> = {
+  unset:     'Not yet scoped — the AI hasn’t looked at this task',
+  diy:       'Do it yourself — keep it on the assignee’s plate',
+  delegate:  'Hand to a household member with context',
+  outsource: 'Book a paid service (TaskRabbit, Handy, etc.)',
+  buy:       'This is actually a purchase — Amazon, Instacart, etc.',
+  schedule:  'The unblocking step is a phone call or appointment',
+  research:  'Too underspecified to act on — scope with your own AI first',
+  drop:      'Not worth doing — politely decline this one',
+};
 
 export function routeLabel(r: Route): string {
   return ROUTE_LABEL[r];
@@ -335,7 +410,11 @@ export function routeLabel(r: Route): string {
 export function RouteChip({ route }: { route: Route }) {
   const c = ROUTE_COLORS[route];
   return (
-    <span className="chip" style={{ background: c.bg, color: c.fg }}>
+    <span
+      className="chip"
+      style={{ background: c.bg, color: c.fg, cursor: 'help' }}
+      title={ROUTE_DESC[route]}
+    >
       <span aria-hidden style={{ fontSize: 11 }}>
         {ROUTE_GLYPH[route]}
       </span>

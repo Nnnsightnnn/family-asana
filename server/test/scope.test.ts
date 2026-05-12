@@ -138,6 +138,26 @@ test('mobilization: scoping disabled + storage round-trip', async (t) => {
     assert.ok(done.completed_at);
   });
 
+  await t.test('POST /api/scope/plan returns disabled body when no key', async () => {
+    const res = await af('/api/scope/plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: 'Kitchen renovation — new cabinets, tile, paint',
+        project_id: project.id,
+      }),
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      disabled?: boolean;
+      disabled_reason?: string;
+      kind?: string;
+    };
+    assert.equal(body.disabled, true);
+    assert.equal(body.disabled_reason, 'no_key');
+    assert.equal(body.kind, undefined, 'no kind discriminator on a disabled plan');
+  });
+
   await t.test('POST /api/scope/tasks/:id returns 503 when scoping is disabled', async () => {
     const createRes = await af('/api/tasks', {
       method: 'POST',

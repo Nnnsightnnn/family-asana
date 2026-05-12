@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { api } from '../api';
+import { api, type TaskWrite } from '../api';
 import type { Project, ScopeDisabledReason, Task, User } from '../types';
 import { Avatar, Icon, ProjectDot } from './atoms';
 import { SurfaceTopBar } from './MyTasks';
@@ -69,7 +69,7 @@ export default function CalendarView({ projects, users }: Props) {
   });
 
   const updateTask = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Task> }) =>
+    mutationFn: ({ id, data }: { id: string; data: TaskWrite }) =>
       api.updateTask(id, data),
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ['tasks', 'all'] });
