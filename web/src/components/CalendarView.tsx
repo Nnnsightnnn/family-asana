@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { api, type TaskWrite } from '../api';
 import type { Project, ScopeDisabledReason, Task, User } from '../types';
+import { parseRecurrence } from '../types';
 import { Avatar, Icon, ProjectDot } from './atoms';
 import { SurfaceTopBar } from './MyTasks';
 import TaskDetail from './TaskDetail';
@@ -54,13 +55,8 @@ export default function CalendarView({ projects, users }: Props) {
   });
 
   const createTask = useMutation({
-    mutationFn: (input: {
-      project_id: string;
-      title: string;
-      due_date: number | null;
-      assignee_id: string | null;
-      status: Task['status'];
-    }) => api.createTask(input),
+    mutationFn: (input: TaskWrite & { project_id: string; title: string }) =>
+      api.createTask(input),
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['tasks', 'all'] });
       qc.invalidateQueries({ queryKey: ['tasks', created.project_id] });
@@ -280,10 +276,26 @@ export default function CalendarView({ projects, users }: Props) {
         <TaskDetail
           task={selected}
           project={selectedProject}
+          projects={projects}
           users={users}
           onClose={() => selectTask(null)}
           onUpdate={(data) => updateTask.mutate({ id: selected.id, data })}
           onDelete={() => deleteTask.mutate(selected.id)}
+          onDuplicate={() =>
+            createTask.mutate({
+              project_id: selected.project_id,
+              title: `Copy of ${selected.title}`,
+              description: selected.description,
+              status: selected.status,
+              assignee_id: selected.assignee_id,
+              due_date: selected.due_date,
+              recurrence: parseRecurrence(selected.recurrence),
+              route: selected.route,
+              next_action: selected.next_action,
+              service_url: selected.service_url,
+              scoped_model: selected.scoped_model,
+            })
+          }
           onScope={(tier) => scopeTaskOnServer(selected.id, tier)}
         />
       )}

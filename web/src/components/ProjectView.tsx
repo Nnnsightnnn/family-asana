@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { api, type TaskWrite } from '../api';
 import type { ScopeDisabledReason, Task, User } from '../types';
+import { parseRecurrence } from '../types';
 import { Icon } from './atoms';
 import ListView from './ListView';
 import BoardView from './BoardView';
@@ -212,10 +213,26 @@ export default function ProjectView({ projectId, users }: Props) {
           <TaskDetail
             task={selected}
             project={project}
+            projects={projects}
             users={users}
             onClose={() => select(null)}
             onUpdate={(data) => updateTask.mutate({ id: selected.id, data })}
             onDelete={() => deleteTask.mutate(selected.id)}
+            onDuplicate={() =>
+              createTask.mutate({
+                project_id: selected.project_id,
+                title: `Copy of ${selected.title}`,
+                description: selected.description,
+                status: selected.status,
+                assignee_id: selected.assignee_id,
+                due_date: selected.due_date,
+                recurrence: parseRecurrence(selected.recurrence),
+                route: selected.route,
+                next_action: selected.next_action,
+                service_url: selected.service_url,
+                scoped_model: selected.scoped_model,
+              })
+            }
             onScope={(tier) => scopeTaskOnServer(selected.id, tier)}
           />
         </ErrorBoundary>

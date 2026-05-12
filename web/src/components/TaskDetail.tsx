@@ -39,15 +39,44 @@ function ruleToPresetValue(rule: RecurrenceRule | null): string {
 type Props = {
   task: Task;
   project: Project;
+  projects: Project[];
   users: User[];
   onClose: () => void;
   onUpdate: (data: TaskWrite) => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   /** Triggers a fresh AI scope of this task; resolves with the disabled flag (+ reason) for UI feedback. */
   onScope: (
     tier?: 'fast' | 'smart'
   ) => Promise<{ disabled: boolean; disabled_reason?: ScopeDisabledReason }>;
 };
+
+// Noon-local matches the TZ-drift convention used by the Due input below
+// and by QuickAddTask — store a stable mid-day timestamp regardless of TZ.
+function noonLocal(d: Date): number {
+  d.setHours(12, 0, 0, 0);
+  return d.getTime();
+}
+function todayTs(): number {
+  return noonLocal(new Date());
+}
+function tomorrowTs(): number {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return noonLocal(d);
+}
+function thisWeekendTs(): number {
+  const d = new Date();
+  const day = d.getDay();
+  if (day !== 0 && day !== 6) d.setDate(d.getDate() + (6 - day));
+  return noonLocal(d);
+}
+function nextWeekTs(): number {
+  const d = new Date();
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? 1 : 8 - day));
+  return noonLocal(d);
+}
 
 const STATUSES: TaskStatus[] = ['todo', 'doing', 'blocked', 'done'];
 const STATUS_BG: Record<TaskStatus, string> = {
@@ -80,10 +109,12 @@ function scopeDisabledMessage(reason?: ScopeDisabledReason): string {
 export default function TaskDetail({
   task,
   project,
+  projects,
   users,
   onClose,
   onUpdate,
   onDelete,
+  onDuplicate,
   onScope,
 }: Props) {
   const [title, setTitle] = useState(task.title);
@@ -91,13 +122,28 @@ export default function TaskDetail({
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [scoping, setScoping] = useState(false);
   const [scopeError, setScopeError] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [submenu, setSubmenu] = useState<'move' | null>(null);
 
   useEffect(() => {
     setTitle(task.title);
     setDescription(task.description);
     setSavedAt(null);
     setScopeError(null);
+    setMenuOpen(false);
+    setSubmenu(null);
   }, [task.id]);
+
+  function setDue(ts: number | null) {
+    onUpdate({ due_date: ts });
+    setMenuOpen(false);
+    setSubmenu(null);
+  }
+  function moveTo(projectId: string) {
+    if (projectId !== task.project_id) onUpdate({ project_id: projectId });
+    setMenuOpen(false);
+    setSubmenu(null);
+  }
 
   async function runScope(tier?: 'fast' | 'smart') {
     setScoping(true);
@@ -160,13 +206,95 @@ export default function TaskDetail({
           {project.name}
         </span>
         <span className="flex-1" />
-        <button
-          type="button"
-          className="rounded p-1.5 text-stoop-muted hover:bg-stoop-hairline"
-          aria-label="More"
-        >
-          <Icon.More className="h-3.5 w-3.5" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            className="rounded p-1.5 text-stoop-muted hover:bg-stoop-hairline"
+            onClick={() => {
+              setMenuOpen((v) => !v);
+              setSubmenu(null);
+            }}
+            aria-label="More"
+            aria-expanded={menuOpen}
+          >
+            <Icon.More className="h-3.5 w-3.5" />
+          </button>
+          {menuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-30"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSubmenu(null);
+                }}
+              />
+              <div
+                className="absolute right-0 top-full z-40 mt-1 w-56 overflow-hidden rounded-card border border-stoop-hairline bg-stoop-panel shadow-soft"
+                role="menu"
+              >
+                <div className="px-3 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-stoop-muted">
+                  Set due date
+                </div>
+                <MenuItem onClick={() => setDue(todayTs())}>Today</MenuItem>
+                <MenuItem onClick={() => setDue(tomorrowTs())}>Tomorrow</MenuItem>
+                <MenuItem onClick={() => setDue(thisWeekendTs())}>This weekend</MenuItem>
+                <MenuItem onClick={() => setDue(nextWeekTs())}>Next week</MenuItem>
+                {task.due_date != null && (
+                  <MenuItem onClick={() => setDue(null)}>Clear</MenuItem>
+                )}
+                <div className="my-1 border-t border-stoop-hairline" />
+                <MenuItem
+                  onClick={() => {
+                    onDuplicate();
+                    setMenuOpen(false);
+                  }}
+                >
+                  Duplicate task
+                </MenuItem>
+                <div className="relative">
+                  <MenuItem
+                    onClick={() => setSubmenu(submenu === 'move' ? null : 'move')}
+                    disabled={projects.length <= 1}
+                  >
+                    <span className="flex items-center justify-between">
+                      Move to project
+                      <span className="text-stoop-muted">▸</span>
+                    </span>
+                  </MenuItem>
+                  {submenu === 'move' && (
+                    <div className="absolute right-full top-0 mr-1 w-52 overflow-hidden rounded-card border border-stoop-hairline bg-stoop-panel shadow-soft">
+                      <div className="max-h-72 overflow-auto py-1">
+                        {projects
+                          .filter((p) => p.id !== task.project_id)
+                          .map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-stoop-ink hover:bg-stoop-hairline"
+                              onClick={() => moveTo(p.id)}
+                            >
+                              <ProjectDot project={p} size={8} />
+                              <span className="truncate">{p.name}</span>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="my-1 border-t border-stoop-hairline" />
+                <MenuItem
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (confirm('Delete this task?')) onDelete();
+                  }}
+                  destructive
+                >
+                  Delete task
+                </MenuItem>
+              </div>
+            </>
+          )}
+        </div>
         <button
           type="button"
           className="rounded p-1.5 text-stoop-muted hover:bg-stoop-hairline"
@@ -389,6 +517,36 @@ export default function TaskDetail({
         </button>
       </div>
     </aside>
+  );
+}
+
+function MenuItem({
+  children,
+  onClick,
+  disabled,
+  destructive,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className={clsx(
+        'block w-full px-3 py-1.5 text-left text-[13px]',
+        disabled
+          ? 'cursor-not-allowed text-stoop-muted opacity-60'
+          : 'text-stoop-ink hover:bg-stoop-hairline'
+      )}
+      style={destructive && !disabled ? { color: '#B36447' } : undefined}
+    >
+      {children}
+    </button>
   );
 }
 
