@@ -1,5 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { nanoid } from 'nanoid';
+import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { db, now } from './db.js';
 import { env } from './env.js';
 
@@ -47,9 +48,11 @@ export function clearSessionCookie(reply: FastifyReply) {
 export function getUserFromRequest(req: FastifyRequest): User | null {
   const sid = req.cookies?.[SESSION_COOKIE];
   if (!sid) return null;
+  // Explicit column list — never return password_hash or other secrets.
   const row = db
     .prepare(
-      `SELECT u.* FROM sessions s
+      `SELECT u.id, u.email, u.name, u.avatar_color, u.created_at
+         FROM sessions s
          JOIN users u ON u.id = s.user_id
         WHERE s.id = ? AND s.expires_at > ?`
     )
@@ -88,4 +91,33 @@ export function upsertUserByEmail(email: string): User {
 export function emailIsAllowed(email: string): boolean {
   if (env.ALLOWED_EMAILS.length === 0) return true;
   return env.ALLOWED_EMAILS.includes(email.trim().toLowerCase());
+}
+
+export type UserWithSecret = User & { password_hash: string | null };
+
+export function getUserByEmail(email: string): UserWithSecret | null {
+  const normalized = email.trim().toLowerCase();
+  const row = db
+    .prepare('SELECT * FROM users WHERE email = ?')
+    .get(normalized) as UserWithSecret | undefined;
+  return row ?? null;
+}
+
+export function userHasPassword(userId: string): boolean {
+  const row = db
+    .prepare('SELECT password_hash FROM users WHERE id = ?')
+    .get(userId) as { password_hash: string | null } | undefined;
+  return !!row?.password_hash;
+}
+
+export async function hashPassword(plain: string): Promise<string> {
+  return argonHash(plain);
+}
+
+export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
+  try {
+    return await argonVerify(hash, plain);
+  } catch {
+    return false;
+  }
 }

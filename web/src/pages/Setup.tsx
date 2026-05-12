@@ -87,7 +87,10 @@ export default function Setup({ user }: { user: User }) {
         name: values.name.trim(),
         avatar_color: values.avatar_color,
       });
-      qc.setQueryData(['me'], { user: updated });
+      qc.setQueryData<{ user: User | null; has_password: boolean }>(
+        ['me'],
+        (prev) => ({ user: updated, has_password: prev?.has_password ?? false })
+      );
       setStep(2);
     } catch (err) {
       setError((err as Error).message);

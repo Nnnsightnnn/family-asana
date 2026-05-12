@@ -46,6 +46,11 @@ addColumnIfMissing('tasks', 'scoped_at', 'INTEGER');
 addColumnIfMissing('tasks', 'scoped_model', 'TEXT');
 addColumnIfMissing('tasks', 'recurrence', 'TEXT');
 
+// Password auth columns on users (added after initial deploy — magic-link
+// users created earlier have NULL here and stay magic-link-only until they opt in).
+addColumnIfMissing('users', 'password_hash', 'TEXT');
+addColumnIfMissing('users', 'password_set_at', 'INTEGER');
+
 // Indexes that depend on the columns above. CREATE INDEX IF NOT EXISTS is safe to re-run.
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_route ON tasks(route);`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_mobilization ON tasks(mobilization_state);`);

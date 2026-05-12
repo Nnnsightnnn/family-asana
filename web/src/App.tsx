@@ -37,7 +37,10 @@ function VerifyPage() {
     api
       .verify(token)
       .then((res) => {
-        qc.setQueryData(['me'], { user: res.user });
+        qc.setQueryData<{ user: User | null; has_password: boolean }>(
+          ['me'],
+          (prev) => ({ user: res.user, has_password: prev?.has_password ?? false })
+        );
         // Recheck setup state after sign-in — the first user to verify
         // on a fresh install should land at /setup.
         qc.invalidateQueries({ queryKey: ['installation'] });

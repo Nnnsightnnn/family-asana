@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import type { User } from '../types';
 import { Avatar, AVATAR_COLORS, Icon, SwatchRow } from './atoms';
@@ -17,11 +17,23 @@ export default function ProfileModal({ user, onClose }: Props) {
   );
   const [error, setError] = useState<string | null>(null);
 
+  // Read the cached /me response for `has_password`. Falls back to false
+  // if (somehow) absent; the security section gracefully handles that.
+  const meQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: () => api.me(),
+    staleTime: 60_000,
+  });
+  const hasPassword = !!meQuery.data?.has_password;
+
   const mutation = useMutation({
     mutationFn: (data: { name: string; avatar_color: string }) =>
       api.updateMe(data),
     onSuccess: (updated) => {
-      qc.setQueryData(['me'], { user: updated });
+      qc.setQueryData<{ user: User | null; has_password: boolean }>(
+        ['me'],
+        (prev) => ({ user: updated, has_password: prev?.has_password ?? false })
+      );
       onClose();
     },
     onError: (e) => setError((e as Error).message),
@@ -131,7 +143,215 @@ export default function ProfileModal({ user, onClose }: Props) {
             </button>
           </div>
         </form>
+
+        <PasswordSection hasPassword={hasPassword} />
       </div>
+    </div>
+  );
+}
+
+function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  function reset() {
+    setCurrent('');
+    setNext('');
+    setConfirm('');
+    setMsg(null);
+  }
+
+  const setMutation = useMutation({
+    mutationFn: () =>
+      api.setPassword(next, hasPassword ? current : undefined),
+    onSuccess: () => {
+      qc.setQueryData<{ user: User | null; has_password: boolean }>(
+        ['me'],
+        (prev) =>
+          prev ? { ...prev, has_password: true } : { user: null, has_password: true }
+      );
+      reset();
+      setOpen(false);
+      setMsg({ kind: 'ok', text: 'Password saved.' });
+    },
+    onError: (e) => {
+      const m = (e as Error).message;
+      if (/401/.test(m)) setMsg({ kind: 'err', text: 'Current password is wrong.' });
+      else if (/400/.test(m)) setMsg({ kind: 'err', text: 'Password must be at least 8 characters.' });
+      else setMsg({ kind: 'err', text: m });
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: () => api.removePassword(),
+    onSuccess: () => {
+      qc.setQueryData<{ user: User | null; has_password: boolean }>(
+        ['me'],
+        (prev) =>
+          prev ? { ...prev, has_password: false } : { user: null, has_password: false }
+      );
+      reset();
+      setOpen(false);
+      setMsg({ kind: 'ok', text: 'Password removed. You can still sign in with a magic link.' });
+    },
+    onError: (e) => setMsg({ kind: 'err', text: (e as Error).message }),
+  });
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    if (next.length < 8) {
+      setMsg({ kind: 'err', text: 'Password must be at least 8 characters.' });
+      return;
+    }
+    if (next !== confirm) {
+      setMsg({ kind: 'err', text: 'Passwords do not match.' });
+      return;
+    }
+    if (hasPassword && !current) {
+      setMsg({ kind: 'err', text: 'Enter your current password.' });
+      return;
+    }
+    setMutation.mutate();
+  }
+
+  function onRemove() {
+    if (!window.confirm('Remove your password? You will need a magic link to sign in next time.')) {
+      return;
+    }
+    setMsg(null);
+    removeMutation.mutate();
+  }
+
+  return (
+    <div className="border-t border-stoop-hairline px-5 py-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-stoop-muted">
+            Sign-in & security
+          </div>
+          <div className="mt-1 text-[13.5px] text-stoop-ink">
+            {hasPassword
+              ? 'Password is set. Sign in directly without checking email.'
+              : 'No password set. You sign in via emailed magic link.'}
+          </div>
+        </div>
+        {!open && (
+          <button
+            type="button"
+            className="btn-ghost px-3 py-1.5 text-[13px]"
+            onClick={() => {
+              reset();
+              setOpen(true);
+            }}
+          >
+            {hasPassword ? 'Change' : 'Set password'}
+          </button>
+        )}
+      </div>
+
+      {msg && !open && (
+        <p
+          className="mt-3 text-sm"
+          style={{ color: msg.kind === 'ok' ? '#3F6E4F' : '#B36447' }}
+        >
+          {msg.text}
+        </p>
+      )}
+
+      {open && (
+        <form onSubmit={onSubmit} className="mt-4">
+          {hasPassword && (
+            <div>
+              <label className="block text-[11px] font-medium uppercase tracking-[0.04em] text-stoop-muted">
+                Current password
+              </label>
+              <input
+                type="password"
+                autoFocus
+                className="input-shell mt-2 text-[14px]"
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+          )}
+          <div className={hasPassword ? 'mt-3' : ''}>
+            <label className="block text-[11px] font-medium uppercase tracking-[0.04em] text-stoop-muted">
+              New password
+            </label>
+            <input
+              type="password"
+              autoFocus={!hasPassword}
+              className="input-shell mt-2 text-[14px]"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+            />
+            <p className="mt-1 text-xs text-stoop-muted">At least 8 characters.</p>
+          </div>
+          <div className="mt-3">
+            <label className="block text-[11px] font-medium uppercase tracking-[0.04em] text-stoop-muted">
+              Confirm new password
+            </label>
+            <input
+              type="password"
+              className="input-shell mt-2 text-[14px]"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
+
+          {msg && (
+            <p
+              className="mt-3 text-sm"
+              style={{ color: msg.kind === 'ok' ? '#3F6E4F' : '#B36447' }}
+            >
+              {msg.text}
+            </p>
+          )}
+
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <div>
+              {hasPassword && (
+                <button
+                  type="button"
+                  className="text-[13px] text-stoop-muted hover:text-[#B36447] hover:underline"
+                  onClick={onRemove}
+                  disabled={removeMutation.isPending}
+                >
+                  Remove password
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="btn-ghost px-3 py-1.5 text-[13px]"
+                onClick={() => {
+                  reset();
+                  setOpen(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn-primary px-4 py-1.5 text-[13px]"
+                disabled={setMutation.isPending}
+              >
+                {setMutation.isPending ? 'Saving…' : 'Save password'}
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

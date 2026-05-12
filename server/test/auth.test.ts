@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bootTestServer } from './helpers.js';
+import { bootTestServer, authedFetch } from './helpers.js';
 
 test('auth flow', async (t) => {
   const server = await bootTestServer();
@@ -58,8 +58,105 @@ test('auth flow', async (t) => {
       headers: { cookie },
     });
     assert.equal(meRes.status, 200);
-    const me = (await meRes.json()) as { user: { email: string } | null };
+    const me = (await meRes.json()) as {
+      user: { email: string } | null;
+      has_password: boolean;
+    };
     assert.ok(me.user, '/me returns a user when authed');
     assert.equal(me.user!.email, email);
+    assert.equal(me.has_password, false, 'new user has no password yet');
+  });
+
+  await t.test('password flow: set, login, /me reports has_password', async () => {
+    const email = `carol-${Date.now()}@example.com`;
+    const { fetch: authed, cookie } = await authedFetch(server.base, email);
+
+    // set-password without auth → 401
+    const unauth = await fetch(`${server.base}/api/auth/set-password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: 'correct horse battery' }),
+    });
+    assert.equal(unauth.status, 401);
+
+    // set-password while authed → 200
+    const setRes = await authed('/api/auth/set-password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: 'correct horse battery' }),
+    });
+    assert.equal(setRes.status, 200);
+
+    // /me now reports has_password: true and must NOT leak the hash
+    const meRes = await authed('/api/auth/me');
+    const meRaw = await meRes.text();
+    assert.ok(!/password_hash/.test(meRaw), '/me must not leak password_hash');
+    assert.ok(!/argon2/.test(meRaw), '/me must not leak the argon2 hash');
+    const me = JSON.parse(meRaw) as { has_password: boolean };
+    assert.equal(me.has_password, true);
+
+    // login with correct credentials → 200 + new session cookie
+    const loginOk = await fetch(`${server.base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'correct horse battery' }),
+    });
+    assert.equal(loginOk.status, 200);
+    const newCookie = loginOk.headers.get('set-cookie');
+    assert.ok(newCookie, 'login sets a fa_session cookie');
+    assert.match(newCookie!, /fa_session=/);
+    const loginRaw = await loginOk.text();
+    assert.ok(!/password_hash/.test(loginRaw), 'login response must not leak password_hash');
+    assert.ok(!/argon2/.test(loginRaw), 'login response must not leak the argon2 hash');
+
+    // The new cookie is independent — /me works with it
+    const meWithNew = await fetch(`${server.base}/api/auth/me`, {
+      headers: { cookie: newCookie!.split(';')[0] },
+    });
+    const meBody = (await meWithNew.json()) as { user: { email: string } | null };
+    assert.equal(meBody.user!.email, email);
+
+    // wrong password → 401 invalid_credentials
+    const badPw = await fetch(`${server.base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'wrong' }),
+    });
+    assert.equal(badPw.status, 401);
+    const badPwBody = (await badPw.json()) as { error: string };
+    assert.equal(badPwBody.error, 'invalid_credentials');
+
+    // unknown email → same 401 shape (no enumeration)
+    const unknown = await fetch(`${server.base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: `nobody-${Date.now()}@example.com`, password: 'whatever' }),
+    });
+    assert.equal(unknown.status, 401);
+    const unknownBody = (await unknown.json()) as { error: string };
+    assert.equal(unknownBody.error, 'invalid_credentials');
+
+    // user with no password set → login returns 401 (no leak)
+    const otherEmail = `dave-${Date.now()}@example.com`;
+    await authedFetch(server.base, otherEmail); // creates the user, no password
+    const noPw = await fetch(`${server.base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: otherEmail, password: 'anything' }),
+    });
+    assert.equal(noPw.status, 401);
+
+    // DELETE /password reverts to magic-link only
+    const removeRes = await authed('/api/auth/password', { method: 'DELETE' });
+    assert.equal(removeRes.status, 200);
+    const afterRemove = await fetch(`${server.base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'correct horse battery' }),
+    });
+    assert.equal(afterRemove.status, 401, 'login fails after password removed');
+
+    // Cookie is consumed silently to keep TS happy on unused vars
+    void cookie;
   });
 });

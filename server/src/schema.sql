@@ -6,11 +6,14 @@ PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS users (
-  id           TEXT PRIMARY KEY,
-  email        TEXT NOT NULL UNIQUE,
-  name         TEXT NOT NULL,
-  avatar_color TEXT NOT NULL DEFAULT '#4573D2', -- Asana-ish blue
-  created_at   INTEGER NOT NULL
+  id              TEXT PRIMARY KEY,
+  email           TEXT NOT NULL UNIQUE,
+  name            TEXT NOT NULL,
+  avatar_color    TEXT NOT NULL DEFAULT '#4573D2', -- Asana-ish blue
+  created_at      INTEGER NOT NULL,
+  -- argon2id hash. NULL = user has not set a password (magic-link only).
+  password_hash   TEXT,
+  password_set_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS magic_links (

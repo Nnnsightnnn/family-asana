@@ -38,11 +38,20 @@ async function http<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const api = {
   // auth
-  me: () => http<{ user: User | null }>('GET', '/api/auth/me'),
+  me: () =>
+    http<{ user: User | null; has_password: boolean }>('GET', '/api/auth/me'),
   requestLink: (email: string) =>
     http<{ ok: true }>('POST', '/api/auth/request-link', { email }),
   verify: (token: string) =>
     http<{ ok: true; user: User }>('GET', `/api/auth/verify?token=${encodeURIComponent(token)}`),
+  login: (email: string, password: string) =>
+    http<{ ok: true; user: User }>('POST', '/api/auth/login', { email, password }),
+  setPassword: (password: string, current_password?: string) =>
+    http<{ ok: true }>('POST', '/api/auth/set-password', {
+      password,
+      ...(current_password ? { current_password } : {}),
+    }),
+  removePassword: () => http<{ ok: true }>('DELETE', '/api/auth/password'),
   logout: () => http<{ ok: true }>('POST', '/api/auth/logout'),
 
   // users

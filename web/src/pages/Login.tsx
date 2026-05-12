@@ -1,14 +1,43 @@
 import { FormEvent, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { Icon } from '../components/atoms';
+import type { User } from '../types';
+
+type Mode = 'password' | 'magic';
 
 export default function Login() {
+  const qc = useQueryClient();
+  const [mode, setMode] = useState<Mode>('password');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: FormEvent) {
+  async function onPasswordSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.login(email, password);
+      qc.setQueryData<{ user: User | null; has_password: boolean }>(
+        ['me'],
+        (prev) => ({ user: res.user, has_password: prev?.has_password ?? true })
+      );
+      // App will route to '/' automatically once loggedIn flips true.
+    } catch (err) {
+      const msg = (err as Error).message;
+      // Server returns 401 with { error: 'invalid_credentials' } for any failure.
+      // Don't try to distinguish — just show one message.
+      if (/401/.test(msg)) setError('Wrong email or password.');
+      else setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onMagicSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -20,6 +49,13 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setError(null);
+    setPassword('');
+    setSent(false);
   }
 
   return (
@@ -34,7 +70,7 @@ export default function Login() {
             <span className="font-medium tracking-tight">Family</span>
           </div>
 
-          {sent ? (
+          {mode === 'magic' && sent ? (
             <>
               <h1 className="display text-[36px] leading-[1.05] m-0">
                 Check your <span className="display-italic">inbox.</span>
@@ -58,15 +94,86 @@ export default function Login() {
                   .
                 </div>
               </div>
+              <div className="mt-6 text-[13px] text-stoop-muted">
+                <button
+                  type="button"
+                  className="text-stoop-accent hover:underline"
+                  onClick={() => switchMode('password')}
+                >
+                  Sign in with a password instead
+                </button>
+              </div>
             </>
-          ) : (
-            <form onSubmit={onSubmit}>
+          ) : mode === 'password' ? (
+            <form onSubmit={onPasswordSubmit}>
               <h1 className="display text-[40px] leading-[1.05] m-0">
                 Welcome <span className="display-italic">home.</span>
               </h1>
               <p className="mt-3.5 text-[15px] leading-relaxed text-stoop-muted">
-                Pop in your email and we’ll send a one-tap sign-in link. No
-                password, nothing to remember.
+                Sign in with your email and password.
+              </p>
+
+              <div className="mt-8">
+                <label className="block text-[11px] font-medium uppercase tracking-[0.04em] text-stoop-muted">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  className="input-shell mt-2 text-[15px]"
+                  placeholder="you@home"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="username"
+                />
+              </div>
+
+              <div className="mt-5">
+                <label className="block text-[11px] font-medium uppercase tracking-[0.04em] text-stoop-muted">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  className="input-shell mt-2 text-[15px]"
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+
+              {error && (
+                <p className="mt-3 text-sm text-[#B36447]">{error}</p>
+              )}
+
+              <button
+                className="btn-primary mt-5 w-full py-3.5 text-[15px]"
+                disabled={loading || !email || !password}
+              >
+                {loading ? 'Signing in…' : 'Sign in'}
+              </button>
+
+              <p className="mt-4 text-[13px] text-stoop-muted">
+                No password yet?{' '}
+                <button
+                  type="button"
+                  className="text-stoop-accent hover:underline"
+                  onClick={() => switchMode('magic')}
+                >
+                  Email me a sign-in link
+                </button>
+                .
+              </p>
+            </form>
+          ) : (
+            <form onSubmit={onMagicSubmit}>
+              <h1 className="display text-[40px] leading-[1.05] m-0">
+                Welcome <span className="display-italic">home.</span>
+              </h1>
+              <p className="mt-3.5 text-[15px] leading-relaxed text-stoop-muted">
+                Pop in your email and we’ll send a one-tap sign-in link.
               </p>
 
               <div className="mt-8">
@@ -93,6 +200,15 @@ export default function Login() {
                 </button>
                 <p className="mt-3.5 text-xs text-stoop-muted">
                   Only people on this household’s allowlist can sign in.
+                </p>
+                <p className="mt-4 text-[13px] text-stoop-muted">
+                  <button
+                    type="button"
+                    className="text-stoop-accent hover:underline"
+                    onClick={() => switchMode('password')}
+                  >
+                    Sign in with a password instead
+                  </button>
                 </p>
               </div>
             </form>
