@@ -92,40 +92,79 @@ In the Tailscale admin panel, rename the PC node to `family-asana`. With Magic D
 
 For a nicer URL without the port, run a tiny reverse proxy (Caddy is one line of config) on the PC mapping `:80` → `:4000`. Optional — `:4000` works fine.
 
-## 9. Scheduled backups
+## 9. Scheduled backups (local + offsite to Cloudflare R2)
 
-Open **Task Scheduler** → Create Basic Task:
+Two layers, both running on Task Scheduler:
 
-- Name: **Family Asana backup**
-- Trigger: Daily, every 6 hours
-- Action: Start a program
-  - Program: `powershell.exe`
-  - Arguments:
-    ```
-    -NoProfile -Command "Copy-Item 'C:\family-asana\server\data\family-asana.db' 'C:\Users\<you>\OneDrive\FamilyAsanaBackups\family-asana-$(Get-Date -Format yyyyMMdd-HHmm).db' ; Get-ChildItem 'C:\Users\<you>\OneDrive\FamilyAsanaBackups\' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 30 | Remove-Item"
-    ```
+1. **Local snapshot + offsite push every 6 h** — `admin.ps1 offsite-push` calls `backup-now` (sqlite3 `.backup` to `C:\family-asana\backups\`) and then uploads the snapshot to a Cloudflare R2 bucket. If R2 isn't configured the push is a silent no-op and you still get the local snapshot.
+2. **Weekly integrity check on both layers** — `verify-backup.ps1` (local) and `admin.ps1 offsite-verify` (R2). Each downloads the most recent `.db`, runs `PRAGMA integrity_check`, and exits non-zero on failure.
 
-That copies the SQLite file to OneDrive every 6 hours and keeps the most recent 30 copies. If you don't use OneDrive, point the destination at a Backblaze B2 sync folder.
-
-> SQLite in WAL mode is safe to copy live — the WAL is checkpointed on each connection close and the main file is consistent.
-
-### 9a. Weekly backup verification
-
-A backup you can't restore isn't a backup. `scripts/verify-backup.ps1` copies the most recent `.db` from `C:\family-asana\backups\` to a temp file and runs `PRAGMA integrity_check` against it; exit 0 on `ok`, exit 1 otherwise.
-
-Schedule it weekly (Sunday 04:00) with a single command in an Administrator PowerShell:
+Schedule both with `schtasks` in an Administrator PowerShell:
 
 ```powershell
+# Every 6 hours: local snapshot + R2 push
+schtasks /Create /SC HOURLY /MO 6 /TN "FamilyAsanaOffsitePush" /TR "powershell -ExecutionPolicy Bypass -File C:\family-asana\scripts\admin.ps1 offsite-push" /ST 03:00
+
+# Sunday 04:00: weekly local integrity check
 schtasks /Create /SC WEEKLY /D SUN /TN "FamilyAsanaBackupVerify" /TR "powershell -ExecutionPolicy Bypass -File C:\family-asana\scripts\verify-backup.ps1" /ST 04:00
+
+# Sunday 04:15: weekly offsite integrity check
+schtasks /Create /SC WEEKLY /D SUN /TN "FamilyAsanaOffsiteVerify" /TR "powershell -ExecutionPolicy Bypass -File C:\family-asana\scripts\admin.ps1 offsite-verify" /ST 04:15
 ```
 
-To run it manually any time:
+To run any of them manually:
 
 ```powershell
+C:\family-asana\scripts\admin.ps1 offsite-push
+C:\family-asana\scripts\admin.ps1 offsite-verify
 powershell -ExecutionPolicy Bypass -File C:\family-asana\scripts\verify-backup.ps1
 ```
 
-If the backup folder you're verifying differs from the default (`C:\family-asana\backups\`) — e.g. you point the 6-hour backup task at OneDrive — edit `$BackupDir` at the top of `verify-backup.ps1` to match.
+> SQLite in WAL mode is safe to `.backup` live — the WAL is checkpointed on each connection close and the resulting copy is consistent.
+
+> Retention is **enforced in the R2 bucket** via a lifecycle rule (step 9b), not by the script. The script never deletes from R2.
+
+### 9a. R2 bucket setup (one-time, ~5 minutes)
+
+Set up the bucket in the Cloudflare dashboard:
+
+1. **Cloudflare dashboard → R2** → **Create bucket**. Name it e.g. `family-asana-backups`. Pick a location hint near you.
+2. On the bucket → **Settings** → **Object lifecycle rules** → **Add rule**. Name: `expire-30d`. Action: **Delete objects after** 30 days. Apply to all objects. Save. (This is the retention policy — the script does not delete.)
+3. **R2 → Manage R2 API Tokens → Create API token**. Permission: **Object Read & Write**. Scope to the one bucket. Save the **Access Key ID** and **Secret Access Key** — you can't view the secret again later.
+4. Note your **S3 API endpoint** URL — it looks like `https://<accountid>.r2.cloudflarestorage.com` and is shown on the R2 overview page.
+
+### 9b. Plumb the credentials into `.env` over SSH
+
+Don't paste the secret into chat, IM, or a build log. From your Mac, SSH in and write directly into the `.env` on the server:
+
+```bash
+ssh kenny@ncit
+```
+
+```powershell
+cd C:\family-asana\server
+
+# Non-secret values can be appended plainly:
+Add-Content .env "BACKUP_R2_BUCKET=family-asana-backups"
+Add-Content .env "BACKUP_R2_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com"
+Add-Content .env "BACKUP_R2_ACCESS_KEY_ID=<paste-the-access-key-id>"
+
+# Secret — read it interactively so it isn't visible in shell history or logs:
+$secret = Read-Host -AsSecureString "BACKUP_R2_SECRET_ACCESS_KEY"
+$plain  = [System.Net.NetworkCredential]::new('', $secret).Password
+Add-Content .env "BACKUP_R2_SECRET_ACCESS_KEY=$plain"
+Remove-Variable plain
+```
+
+The service does **not** read these — only `admin.ps1` does — so no restart is required after editing.
+
+Install the AWS CLI on the Windows host if it isn't already (`winget install Amazon.AWSCLI`). Then smoke-test:
+
+```powershell
+C:\family-asana\scripts\admin.ps1 offsite-push
+```
+
+Expect: a fresh `family-asana-<timestamp>.db` in `C:\family-asana\backups\`, an identical object in the R2 bucket, and an `OK` line in `C:\family-asana\logs\backup.log`. Tail with `admin.ps1 tail-logs`.
 
 ## 10. Test the failure cases
 
@@ -140,7 +179,14 @@ Before declaring victory:
 
 1. Get any other machine running Node 20 (Mac, Linux, another Windows box).
 2. Clone the repo, `npm install` in `server/`.
-3. Drop the most recent backup file into `server/data/family-asana.db`.
+3. Pull the most recent backup from R2 (using your R2 token):
+   ```bash
+   export AWS_ACCESS_KEY_ID=<id> AWS_SECRET_ACCESS_KEY=<secret> AWS_DEFAULT_REGION=auto
+   aws s3 ls s3://family-asana-backups/ --endpoint-url https://<accountid>.r2.cloudflarestorage.com
+   aws s3 cp s3://family-asana-backups/family-asana-<latest>.db ./server/data/family-asana.db \
+     --endpoint-url https://<accountid>.r2.cloudflarestorage.com
+   ```
+   (If R2 is unreachable, fall back to the local `C:\family-asana\backups\` folder — assuming the disk survived.)
 4. Drop the `uploads/` folder into `server/uploads/` (when Phase 3 lands).
 5. Set the same `SESSION_SECRET` in `.env` so existing sessions stay valid (otherwise everyone re-logs).
 6. `npm run build && npm start`.

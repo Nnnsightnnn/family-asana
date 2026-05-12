@@ -31,6 +31,7 @@ For the *why* and *what* of the product, read [`SCOPE.md`](SCOPE.md). For the bi
 - ⏳ C2 — mobile review pass
 - ⏳ C4 — a11y quick pass
 - ⏳ D4 — first-run setup wizard
+- ⏳ D5 — offsite backups to Cloudflare R2 (code landed; bucket + Task Scheduler setup pending on `ncit`)
 
 **Phase 2+** (E/F/G) blocked until Phase 1 polish above is green.
 
@@ -373,6 +374,25 @@ For the *why* and *what* of the product, read [`SCOPE.md`](SCOPE.md). For the bi
 - Fresh install: first sign-in routes to `/setup`, walks through 3 steps, lands at `/`
 - Subsequent users: no setup overlay
 - Reloading mid-setup remembers progress
+
+### D5 — Offsite backups to Cloudflare R2
+- **Effort:** S (1–2 hrs code + ~15 min one-time cloud setup)
+- **Parallel-safe:** Yes
+- **Blocked by:** None
+
+**Scope.** Extend `admin.ps1` with `offsite-push` (runs `backup-now`, then `aws s3 cp` to a Cloudflare R2 bucket using `BACKUP_R2_*` env vars) and `offsite-verify` (downloads the latest R2 object and runs `PRAGMA integrity_check`). Task Scheduler runs `offsite-push` every 6 h and `offsite-verify` weekly. Retention enforced by a 30-day R2 lifecycle rule, not by the script. Without `BACKUP_R2_BUCKET` set, both commands no-op gracefully (matching the OPENROUTER/RESEND empty-key pattern).
+
+**Files.**
+- `scripts/admin.ps1` — `Invoke-OffsitePush`, `Invoke-OffsiteVerify`, hoisted `Get-EnvValue`, `Write-BackupLog` helper, `$BackupLog` constant
+- `server/.env.example` — `BACKUP_R2_BUCKET`, `BACKUP_R2_ENDPOINT`, `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`
+- `docs/WINDOWS-SETUP.md` — rewritten step 9 (scheduler + bucket setup + `Read-Host -AsSecureString` recipe)
+- `docs/REMOTE-ADMIN.md`, `docs/SCOPE.md` — cross-references updated
+
+**Acceptance.**
+- `admin.ps1 offsite-push` produces a local snapshot AND a matching R2 object, with an `OK` line in `C:\family-asana\logs\backup.log`
+- With `BACKUP_R2_BUCKET=` empty, `offsite-push` exits 0 and writes a single "skipping" log line (no errors)
+- `admin.ps1 offsite-verify` reports `integrity_check=ok` against a healthy R2 object and non-zero against a corrupted one
+- R2 bucket has a lifecycle rule expiring objects after 30 days
 
 ---
 

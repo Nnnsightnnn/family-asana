@@ -16,11 +16,10 @@
 #   - NSSM logs land at    C:\family-asana\logs\{out,err}.log
 #   - Backups go to        C:\family-asana\backups\
 #
-#   NOTE: WINDOWS-SETUP.md step 9 suggests OneDrive as a backup destination
-#   (C:\Users\<you>\OneDrive\FamilyAsanaBackups\), but that path is per-user.
-#   This script defaults to the simpler C:\family-asana\backups\ so it works
-#   out of the box. If you'd rather drop straight into OneDrive, edit
-#   $BackupDir below.
+#   Local backups land in C:\family-asana\backups\. Offsite backups (Cloudflare
+#   R2) are handled by `offsite-push`, which calls `backup-now` and then
+#   `aws s3 cp`s the snapshot to the bucket configured via BACKUP_R2_* in
+#   server\.env. See docs/WINDOWS-SETUP.md step 9 for the full setup.
 #
 # Usage:
 #   .\admin.ps1                       # prints help
@@ -29,6 +28,8 @@
 #   .\admin.ps1 tail-logs             # last 50 lines of each
 #   .\admin.ps1 tail-logs 200         # last 200 lines of each
 #   .\admin.ps1 backup-now
+#   .\admin.ps1 offsite-push          # backup-now + upload to Cloudflare R2
+#   .\admin.ps1 offsite-verify        # download latest R2 backup, integrity_check it
 #   .\admin.ps1 list-users
 # =============================================================================
 
@@ -44,10 +45,33 @@ $DbPath     = 'C:\family-asana\server\data\family-asana.db'
 $LogDir     = 'C:\family-asana\logs'
 $OutLog     = Join-Path $LogDir 'out.log'
 $ErrLog     = Join-Path $LogDir 'err.log'
+$BackupLog  = Join-Path $LogDir 'backup.log'
 $BackupDir  = 'C:\family-asana\backups'
 $EnvFile    = 'C:\family-asana\server\.env'
 $ServiceNm  = 'FamilyAsana'
 $HealthUrl  = 'http://localhost:4000/health'
+
+# --- Shared helpers ----------------------------------------------------------
+function Get-EnvValue {
+    param([string]$Name)
+    if (-not (Test-Path $EnvFile)) { return $null }
+    $match = (Get-Content $EnvFile) |
+        Where-Object { $_ -match "^\s*$Name\s*=" } |
+        Select-Object -First 1
+    if ($null -eq $match) { return $null }
+    return ($match -replace "^\s*$Name\s*=\s*", '').Trim('"').Trim("'")
+}
+
+function Write-BackupLog {
+    param([string]$Message)
+    $ts   = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $line = "[$ts] $Message"
+    Write-Host $line
+    if (-not (Test-Path $LogDir)) {
+        New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    }
+    Add-Content -Path $BackupLog -Value $line
+}
 
 function Show-Help {
     Write-Host ""
@@ -57,8 +81,10 @@ function Show-Help {
     Write-Host "Commands:"
     Write-Host "  health              GET $HealthUrl and print the JSON"
     Write-Host "  restart-service     nssm restart $ServiceNm, then confirm RUNNING"
-    Write-Host "  tail-logs [n]       Print last n lines of err.log and out.log (default 50)"
+    Write-Host "  tail-logs [n]       Print last n lines of err.log, out.log, backup.log (default 50)"
     Write-Host "  backup-now          Online-backup the SQLite DB to $BackupDir"
+    Write-Host "  offsite-push        backup-now + upload to Cloudflare R2 (no-op if BACKUP_R2_BUCKET empty)"
+    Write-Host "  offsite-verify      Download latest R2 backup and PRAGMA integrity_check it"
     Write-Host "  list-users          SELECT name, email FROM users (read-only)"
     Write-Host "  ai-status           Show whether AI task scoping is configured + which models"
     Write-Host ""
@@ -111,6 +137,13 @@ function Invoke-TailLogs {
     } else {
         Write-Host "log not found: $OutLog"
     }
+    Write-Host ""
+    Write-Host "===== BACKUP (last $Tail lines of $BackupLog) =====" -ForegroundColor Yellow
+    if (Test-Path $BackupLog) {
+        Get-Content $BackupLog -Tail $Tail
+    } else {
+        Write-Host "log not found: $BackupLog"
+    }
 }
 
 function Invoke-BackupNow {
@@ -149,6 +182,156 @@ function Invoke-BackupNow {
     }
 }
 
+function Invoke-OffsitePush {
+    # Read R2 config from server/.env.
+    $bucket   = Get-EnvValue 'BACKUP_R2_BUCKET'
+    $endpoint = Get-EnvValue 'BACKUP_R2_ENDPOINT'
+    $keyId    = Get-EnvValue 'BACKUP_R2_ACCESS_KEY_ID'
+    $secret   = Get-EnvValue 'BACKUP_R2_SECRET_ACCESS_KEY'
+
+    if ([string]::IsNullOrWhiteSpace($bucket)) {
+        Write-BackupLog "offsite-push: BACKUP_R2_BUCKET empty; skipping (offsite disabled)."
+        exit 0
+    }
+    if ([string]::IsNullOrWhiteSpace($endpoint) -or
+        [string]::IsNullOrWhiteSpace($keyId)   -or
+        [string]::IsNullOrWhiteSpace($secret)) {
+        Write-BackupLog "offsite-push: ERROR - BACKUP_R2_* incomplete (need ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY)."
+        exit 1
+    }
+
+    $aws = Get-Command aws -ErrorAction SilentlyContinue
+    if (-not $aws) {
+        Write-BackupLog "offsite-push: ERROR - aws CLI not on PATH. Install from https://aws.amazon.com/cli/"
+        exit 1
+    }
+
+    # 1. Produce a fresh local snapshot (same code path as backup-now).
+    Invoke-BackupNow
+
+    # 2. Find the file we just wrote.
+    $latest = Get-ChildItem -Path $BackupDir -Filter '*.db' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $latest) {
+        Write-BackupLog "offsite-push: ERROR - no .db in $BackupDir after backup-now (unexpected)."
+        exit 1
+    }
+
+    # 3. Upload to R2. Scope creds to this process via env vars; clear after.
+    $env:AWS_ACCESS_KEY_ID     = $keyId
+    $env:AWS_SECRET_ACCESS_KEY = $secret
+    # R2 doesn't use regions but the CLI insists one be set.
+    if ([string]::IsNullOrWhiteSpace($env:AWS_DEFAULT_REGION)) {
+        $env:AWS_DEFAULT_REGION = 'auto'
+    }
+
+    $key  = $latest.Name
+    $size = $latest.Length
+    Write-BackupLog "offsite-push: uploading $key ($size bytes) to s3://$bucket/ via $endpoint"
+
+    & aws s3 cp $latest.FullName "s3://$bucket/$key" --endpoint-url $endpoint --only-show-errors
+    $code = $LASTEXITCODE
+
+    Remove-Item Env:AWS_ACCESS_KEY_ID     -ErrorAction SilentlyContinue
+    Remove-Item Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
+
+    if ($code -eq 0) {
+        Write-BackupLog "offsite-push: OK - $key uploaded to s3://$bucket/."
+        exit 0
+    } else {
+        Write-BackupLog "offsite-push: ERROR - aws s3 cp failed with exit code $code."
+        exit 1
+    }
+}
+
+function Invoke-OffsiteVerify {
+    $bucket   = Get-EnvValue 'BACKUP_R2_BUCKET'
+    $endpoint = Get-EnvValue 'BACKUP_R2_ENDPOINT'
+    $keyId    = Get-EnvValue 'BACKUP_R2_ACCESS_KEY_ID'
+    $secret   = Get-EnvValue 'BACKUP_R2_SECRET_ACCESS_KEY'
+
+    if ([string]::IsNullOrWhiteSpace($bucket)) {
+        Write-BackupLog "offsite-verify: BACKUP_R2_BUCKET empty; nothing to verify."
+        exit 0
+    }
+    if ([string]::IsNullOrWhiteSpace($endpoint) -or
+        [string]::IsNullOrWhiteSpace($keyId)   -or
+        [string]::IsNullOrWhiteSpace($secret)) {
+        Write-BackupLog "offsite-verify: ERROR - BACKUP_R2_* incomplete."
+        exit 1
+    }
+
+    $aws = Get-Command aws -ErrorAction SilentlyContinue
+    if (-not $aws) {
+        Write-BackupLog "offsite-verify: ERROR - aws CLI not on PATH."
+        exit 1
+    }
+    $sqlite = Get-Command sqlite3.exe -ErrorAction SilentlyContinue
+    if (-not $sqlite) {
+        Write-BackupLog "offsite-verify: ERROR - sqlite3.exe not on PATH."
+        exit 1
+    }
+
+    $env:AWS_ACCESS_KEY_ID     = $keyId
+    $env:AWS_SECRET_ACCESS_KEY = $secret
+    if ([string]::IsNullOrWhiteSpace($env:AWS_DEFAULT_REGION)) {
+        $env:AWS_DEFAULT_REGION = 'auto'
+    }
+
+    Write-BackupLog "offsite-verify: listing s3://$bucket/ ..."
+    $listing  = & aws s3 ls "s3://$bucket/" --endpoint-url $endpoint 2>&1
+    $listCode = $LASTEXITCODE
+    if ($listCode -ne 0) {
+        Write-BackupLog "offsite-verify: ERROR - aws s3 ls failed (exit $listCode): $listing"
+        Remove-Item Env:AWS_ACCESS_KEY_ID     -ErrorAction SilentlyContinue
+        Remove-Item Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
+        exit 1
+    }
+
+    # Backup filenames are family-asana-yyyy-MM-dd-HHmm.db, so lex sort == chronological.
+    $latestKey = $listing |
+        Where-Object { $_ -match '\.db\s*$' } |
+        ForEach-Object { ($_ -split '\s+')[-1] } |
+        Sort-Object -Descending |
+        Select-Object -First 1
+
+    if ([string]::IsNullOrWhiteSpace($latestKey)) {
+        Write-BackupLog "offsite-verify: ERROR - no .db objects in s3://$bucket/."
+        Remove-Item Env:AWS_ACCESS_KEY_ID     -ErrorAction SilentlyContinue
+        Remove-Item Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
+        exit 1
+    }
+
+    $tempPath = Join-Path $env:TEMP 'family-asana-offsite-verify.db'
+    Write-BackupLog "offsite-verify: downloading $latestKey to $tempPath"
+    & aws s3 cp "s3://$bucket/$latestKey" $tempPath --endpoint-url $endpoint --only-show-errors
+    $dlCode = $LASTEXITCODE
+
+    Remove-Item Env:AWS_ACCESS_KEY_ID     -ErrorAction SilentlyContinue
+    Remove-Item Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
+
+    if ($dlCode -ne 0) {
+        Write-BackupLog "offsite-verify: ERROR - download failed (exit $dlCode)."
+        if (Test-Path $tempPath) { Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }
+        exit 1
+    }
+
+    $result      = & sqlite3.exe $tempPath 'PRAGMA integrity_check;' 2>&1
+    $checkCode   = $LASTEXITCODE
+    $resultText  = ($result | Out-String).Trim()
+
+    if (Test-Path $tempPath) { Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }
+
+    if ($checkCode -eq 0 -and $resultText -match '^ok') {
+        Write-BackupLog "offsite-verify: OK - $latestKey integrity_check=ok"
+        exit 0
+    } else {
+        Write-BackupLog "offsite-verify: ERROR - $latestKey integrity_check FAILED (exit $checkCode): $resultText"
+        exit 1
+    }
+}
+
 function Invoke-ListUsers {
     $sqlite = Get-Command sqlite3.exe -ErrorAction SilentlyContinue
     if (-not $sqlite) {
@@ -175,12 +358,6 @@ function Invoke-AiStatus {
         Write-Error ".env not found at $EnvFile"
         exit 1
     }
-    $lines = Get-Content $EnvFile
-    function Get-EnvValue($name) {
-        $match = $lines | Where-Object { $_ -match "^\s*$name\s*=" } | Select-Object -First 1
-        if ($null -eq $match) { return $null }
-        return ($match -replace "^\s*$name\s*=\s*", '').Trim('"').Trim("'")
-    }
     $key   = Get-EnvValue 'OPENROUTER_API_KEY'
     $fast  = Get-EnvValue 'OPENROUTER_FAST_MODEL'
     $smart = Get-EnvValue 'OPENROUTER_SMART_MODEL'
@@ -206,6 +383,8 @@ switch ($Command) {
     'restart-service' { Invoke-RestartService }
     'tail-logs'       { Invoke-TailLogs -Tail $N }
     'backup-now'      { Invoke-BackupNow }
+    'offsite-push'    { Invoke-OffsitePush }
+    'offsite-verify'  { Invoke-OffsiteVerify }
     'list-users'      { Invoke-ListUsers }
     'ai-status'       { Invoke-AiStatus }
     default           { Show-Help }
