@@ -34,16 +34,40 @@ const RouteEnum = z.enum([
   'drop',
 ]);
 
+// LLMs frequently omit optional fields or return empty strings instead of null.
+// `.nullable()` rejects undefined and `.min(1)` rejects "". Both surface as a
+// parse_error and disable the whole plan in the UI. These helpers accept missing,
+// null, and whitespace-only inputs and normalize to null.
+const nullableText = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .nullish()
+    .transform((v) => {
+      const s = (v ?? '').trim();
+      return s.length > 0 ? s : null;
+    });
+
+// URL fields: lenient — non-http(s) strings degrade to null rather than fail.
+const nullableUrl = z
+  .string()
+  .nullish()
+  .transform((v) => {
+    const s = (v ?? '').trim();
+    if (!s) return null;
+    return /^https?:\/\/\S+$/.test(s) ? s : null;
+  });
+
 const AlternateSchema = z.object({
   label: z.string().min(1).max(80),
-  url: z.string().url().optional().nullable(),
+  url: nullableUrl,
 });
 
-const ScopeJsonSchema = z.object({
+export const ScopeJsonSchema = z.object({
   route: RouteEnum,
-  next_action: z.string().min(1).max(280).nullable(),
-  service_url: z.string().url().nullable(),
-  research_prompt: z.string().min(1).max(2000).nullable(),
+  next_action: nullableText(280),
+  service_url: nullableUrl,
+  research_prompt: nullableText(2000),
   alternates: z.array(AlternateSchema).max(3).default([]),
   confidence: z.enum(['low', 'medium', 'high']),
 });
@@ -201,8 +225,8 @@ export async function scopeTask(
 const PlanTaskSchema = z.object({
   title: z.string().min(1).max(140),
   route: RouteEnum,
-  next_action: z.string().max(280).nullable(),
-  service_url: z.string().url().nullable(),
+  next_action: nullableText(280),
+  service_url: nullableUrl,
 });
 
 // Restrict project colors to the stoop-palette swatch set used by the UI.
@@ -215,12 +239,12 @@ const ProjectColorSchema = z.enum([
   '#7A5C2E', '#6F4A8E', '#B36447', '#5A5A8E',
 ]);
 
-const PlanJsonSchema = z.discriminatedUnion('kind', [
+export const PlanJsonSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('task'),
     task: PlanTaskSchema.extend({
       confidence: z.enum(['low', 'medium', 'high']),
-      research_prompt: z.string().max(2000).nullable().optional(),
+      research_prompt: nullableText(2000),
     }),
   }),
   z.object({

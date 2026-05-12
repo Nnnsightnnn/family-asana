@@ -256,8 +256,7 @@ export default function PlanWithAI({
           {/* Preview */}
           {disabled && (
             <div className="mt-4 rounded-card border border-stoop-hairline bg-stoop-canvas px-4 py-3 text-[13px] text-stoop-ink-soft">
-              AI scoping isn't configured on this server. Use the regular "+ Add
-              task" button to create tasks without AI.
+              {disabledMessage(plan)}
             </div>
           )}
 
@@ -334,6 +333,21 @@ export default function PlanWithAI({
       </div>
     </div>
   );
+}
+
+function disabledMessage(plan: PlanResult | null): string {
+  if (!plan || !plan.disabled) return '';
+  switch (plan.disabled_reason) {
+    case 'no_key':
+      return 'AI planning isn\'t configured on this server. Use the regular "+ Add task" button to create tasks without AI.';
+    case 'api_error':
+      return 'The AI service is unreachable right now. Try again in a moment, or use the regular "+ Add task" button.';
+    case 'empty_response':
+    case 'parse_error':
+      return 'The AI returned a response we couldn\'t parse. Try rephrasing in a bit more detail, or use the regular "+ Add task" button.';
+    default:
+      return 'AI is unavailable right now. Use the regular "+ Add task" button.';
+  }
 }
 
 function includedCount(plan: PlanResult, set: Set<number>): number {
