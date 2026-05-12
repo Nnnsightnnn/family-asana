@@ -128,8 +128,8 @@ powershell -ExecutionPolicy Bypass -File C:\family-asana\scripts\verify-backup.p
 
 Set up the bucket in the Cloudflare dashboard:
 
-1. **Cloudflare dashboard → R2** → **Create bucket**. Name it e.g. `family-asana-backups`. Pick a location hint near you.
-2. On the bucket → **Settings** → **Object lifecycle rules** → **Add rule**. Name: `expire-30d`. Action: **Delete objects after** 30 days. Apply to all objects. Save. (This is the retention policy — the script does not delete.)
+1. **Cloudflare dashboard → R2** → **Create bucket**. Pick a name (referenced as `<your-r2-bucket>` below) and a location hint near you.
+2. On the bucket → **Settings** → **Object lifecycle rules** → **Add rule**. Name: `expire-7d`. Action: **Delete objects after** 7 days. Apply to all objects. Save. (This is the retention policy — the script does not delete. At 4 pushes/day × 7 days ≈ 28 snapshots ≈ a few MB.)
 3. **R2 → Manage R2 API Tokens → Create API token**. Permission: **Object Read & Write**. Scope to the one bucket. Save the **Access Key ID** and **Secret Access Key** — you can't view the secret again later.
 4. Note your **S3 API endpoint** URL — it looks like `https://<accountid>.r2.cloudflarestorage.com` and is shown on the R2 overview page.
 
@@ -145,7 +145,7 @@ ssh kenny@ncit
 cd C:\family-asana\server
 
 # Non-secret values can be appended plainly:
-Add-Content .env "BACKUP_R2_BUCKET=family-asana-backups"
+Add-Content .env "BACKUP_R2_BUCKET=<your-r2-bucket>"
 Add-Content .env "BACKUP_R2_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com"
 Add-Content .env "BACKUP_R2_ACCESS_KEY_ID=<paste-the-access-key-id>"
 
@@ -182,8 +182,8 @@ Before declaring victory:
 3. Pull the most recent backup from R2 (using your R2 token):
    ```bash
    export AWS_ACCESS_KEY_ID=<id> AWS_SECRET_ACCESS_KEY=<secret> AWS_DEFAULT_REGION=auto
-   aws s3 ls s3://family-asana-backups/ --endpoint-url https://<accountid>.r2.cloudflarestorage.com
-   aws s3 cp s3://family-asana-backups/family-asana-<latest>.db ./server/data/family-asana.db \
+   aws s3 ls s3://<your-r2-bucket>/ --endpoint-url https://<accountid>.r2.cloudflarestorage.com
+   aws s3 cp s3://<your-r2-bucket>/family-asana-<latest>.db ./server/data/family-asana.db \
      --endpoint-url https://<accountid>.r2.cloudflarestorage.com
    ```
    (If R2 is unreachable, fall back to the local `C:\family-asana\backups\` folder — assuming the disk survived.)
