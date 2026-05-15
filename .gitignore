@@ -23,7 +23,14 @@ server/*.db-wal
 server/*.db-shm
 server/uploads/
 
+# local SQLite backups (defensive — admin.sh backup-now writes here if APP_DIR=$(pwd))
+backups/
+server/backups/
+
 # Personal AI context — keep out of the cloud repo
 CLAUDE.md
 .claude/
+
+# Operational / deploy notes — local-only, not part of the codebase
+docs/
 
