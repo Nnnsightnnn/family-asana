@@ -87,3 +87,36 @@ CREATE TABLE IF NOT EXISTS installation (
   setup_started_by TEXT REFERENCES users(id)
 );
 INSERT OR IGNORE INTO installation (id) VALUES (1);
+
+-- Photos attached to a project. The on-disk file lives at
+-- server/data/uploads/project/<project_id>/<filename>. Cascading delete keeps
+-- DB rows in sync with the project, but the file unlink happens in the route
+-- handler (SQLite can't reach the filesystem).
+CREATE TABLE IF NOT EXISTS project_photos (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  filename    TEXT NOT NULL,
+  mime_type   TEXT NOT NULL,
+  size_bytes  INTEGER NOT NULL,
+  width       INTEGER,
+  height      INTEGER,
+  caption     TEXT,
+  uploaded_by TEXT NOT NULL REFERENCES users(id),
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_photos_project ON project_photos(project_id);
+
+-- Photos uploaded through the Plan-with-AI flow before any project exists.
+-- Promoted to project_photos when the user commits; otherwise swept on a TTL.
+CREATE TABLE IF NOT EXISTS staged_photos (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  filename    TEXT NOT NULL,
+  mime_type   TEXT NOT NULL,
+  size_bytes  INTEGER NOT NULL,
+  width       INTEGER,
+  height      INTEGER,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_staged_photos_user ON staged_photos(user_id);
+CREATE INDEX IF NOT EXISTS idx_staged_photos_created ON staged_photos(created_at);

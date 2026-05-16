@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { api, type TaskWrite } from '../api';
-import type { ScopeDisabledReason, Task, User } from '../types';
+import { isAcceptedImage, resizeForUpload } from '../photos';
+import type { ProjectPhoto, ScopeDisabledReason, Task, User } from '../types';
 import { parseRecurrence } from '../types';
 import { Icon } from './atoms';
 import ListView from './ListView';
@@ -164,6 +165,7 @@ export default function ProjectView({ projectId, users }: Props) {
           memberCount={users.length}
           onAdd={() => openQuickAdd()}
         />
+        <ProjectPhotoStrip projectId={projectId} />
         <div className="min-h-0 flex-1 overflow-auto">
           {view === 'list' ? (
             <ListView
@@ -319,6 +321,140 @@ function ProjectHeader({
         </button>
       </div>
     </header>
+  );
+}
+
+function ProjectPhotoStrip({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const { data: photos = [] } = useQuery({
+    queryKey: ['project-photos', projectId],
+    queryFn: () => api.listProjectPhotos(projectId),
+  });
+
+  async function onFiles(files: FileList | File[]) {
+    setErr(null);
+    setBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        if (!isAcceptedImage(file)) {
+          setErr('JPEG, PNG, or WebP only.');
+          continue;
+        }
+        const { blob } = await resizeForUpload(file);
+        await api.uploadProjectPhoto(projectId, blob);
+      }
+      qc.invalidateQueries({ queryKey: ['project-photos', projectId] });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDelete(photo: ProjectPhoto) {
+    if (!window.confirm('Delete this photo?')) return;
+    try {
+      await api.deleteProjectPhoto(projectId, photo.id);
+      qc.invalidateQueries({ queryKey: ['project-photos', projectId] });
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  if (photos.length === 0 && !busy && !err) {
+    // Compact empty state — no full strip, just a small "Add photos" button.
+    return (
+      <div className="border-b border-stoop-hairline bg-stoop-canvas px-5 py-2 md:px-10">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              void onFiles(e.target.files);
+            }
+            e.target.value = '';
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-1.5 text-[12.5px] text-stoop-muted hover:text-stoop-ink"
+        >
+          <Icon.Plus className="h-3 w-3" /> Add photos of this area
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-b border-stoop-hairline bg-stoop-canvas px-5 py-3 md:px-10">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            void onFiles(e.target.files);
+          }
+          e.target.value = '';
+        }}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        {photos.map((p) => (
+          <div
+            key={p.id}
+            className="group relative h-16 w-16 overflow-hidden rounded-md border border-stoop-hairline bg-stoop-panel"
+          >
+            <a
+              href={api.projectPhotoUrl(projectId, p.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block h-full w-full"
+            >
+              <img
+                src={api.projectPhotoUrl(projectId, p.id)}
+                alt=""
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            </a>
+            <button
+              type="button"
+              onClick={() => onDelete(p)}
+              aria-label="Delete photo"
+              className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-stoop-ink/70 text-[11px] leading-none text-white opacity-0 transition-opacity hover:bg-stoop-ink group-hover:opacity-100"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          className="flex h-16 w-16 items-center justify-center rounded-md border border-dashed border-stoop-hairline-2 text-[11px] text-stoop-muted hover:border-stoop-accent hover:text-stoop-ink disabled:opacity-50"
+        >
+          <span className="flex flex-col items-center leading-tight">
+            <Icon.Plus className="h-3 w-3" />
+            {busy ? '…' : 'Photo'}
+          </span>
+        </button>
+      </div>
+      {err && (
+        <p className="mt-2 text-[12px]" style={{ color: '#B36447' }}>
+          {err}
+        </p>
+      )}
+    </div>
   );
 }
 

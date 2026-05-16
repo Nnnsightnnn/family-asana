@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { api } from '../api';
+import { isAcceptedImage, resizeForUpload } from '../photos';
 import type { PlanResult, PlanTask, Project, User } from '../types';
 import { Icon, ProjectDot, RouteChip, AVATAR_COLORS, SwatchRow } from './atoms';
 
@@ -14,12 +15,25 @@ type Props = {
 };
 
 const PLAN_DEBOUNCE_MS = 600;
+const MAX_PHOTOS = 4;
 
 const EXAMPLES = [
   'Kitchen sink is leaking — needs a plumber by Saturday',
   'Vacuum living room, take out trash, water the plants',
   'Plan a small backyard birthday for Sam — May 26',
 ];
+
+// One staged photo. We keep the resized Blob in memory so we can re-upload
+// it on commit when the user picks an existing project (task / task_list
+// shapes don't get the server-side promote path).
+type StagedPhoto = {
+  localId: string;
+  status: 'uploading' | 'ready' | 'error';
+  serverId?: string;
+  previewUrl: string;
+  blob?: Blob;
+  error?: string;
+};
 
 export default function PlanWithAI({
   projects,
@@ -33,6 +47,8 @@ export default function PlanWithAI({
   const [planning, setPlanning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<StagedPhoto[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Selection state — which proposed tasks are checked in. Indexed by array
   // position; for kind='task' this is just a boolean flag.
@@ -58,6 +74,30 @@ export default function PlanWithAI({
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // On unmount, best-effort delete any staged photos still hanging around
+  // and revoke local object URLs. The server has a 24h TTL safety net.
+  // Reads `photos` via a ref so this effect doesn't have to re-attach on
+  // every photo change.
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  useEffect(() => {
+    return () => {
+      for (const p of photosRef.current) {
+        URL.revokeObjectURL(p.previewUrl);
+        if (p.serverId) {
+          api.deleteStagedPhoto(p.serverId).catch(() => undefined);
+        }
+      }
+    };
+  }, []);
+
+  // Photos that finished uploading and have a server id. Used both for the
+  // plan call (so the AI sees them) and for the commit promotion path.
+  const stagedIds = photos
+    .filter((p) => p.status === 'ready' && p.serverId)
+    .map((p) => p.serverId!) as string[];
+  const stagedKey = stagedIds.join(',');
+
   // Debounced planning.
   useEffect(() => {
     const trimmed = text.trim();
@@ -66,7 +106,11 @@ export default function PlanWithAI({
       setPlanning(false);
       return;
     }
-    if (trimmed === lastPlannedRef.current) return;
+    // Re-plan when text OR the set of attached photos changes. The key
+    // includes stagedKey so adding/removing a photo (with the same text)
+    // still triggers a fresh AI call.
+    const planKey = `${trimmed}::${stagedKey}`;
+    if (planKey === lastPlannedRef.current) return;
 
     const timer = setTimeout(() => {
       const controller = new AbortController();
@@ -75,11 +119,15 @@ export default function PlanWithAI({
       setPlanning(true);
       setError(null);
       api
-        .plan({ text: trimmed, project_id: defaultProjectId })
+        .plan({
+          text: trimmed,
+          project_id: defaultProjectId,
+          staged_photo_ids: stagedIds.length > 0 ? stagedIds : undefined,
+        })
         .then((result) => {
           if (controller.signal.aborted) return;
           setPlan(result);
-          lastPlannedRef.current = trimmed;
+          lastPlannedRef.current = planKey;
           // initialize include-set + project fields based on the new plan
           if (!result.disabled) {
             if (result.kind === 'task') {
@@ -102,7 +150,10 @@ export default function PlanWithAI({
     }, PLAN_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [text, defaultProjectId]);
+    // stagedKey covers stagedIds (string join); intentionally NOT including
+    // stagedIds itself to avoid an infinite-loop on its array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, defaultProjectId, stagedKey]);
 
   function toggleInclude(i: number) {
     setIncludeSet((prev) => {
@@ -113,14 +164,86 @@ export default function PlanWithAI({
     });
   }
 
+  async function addPhotos(files: FileList | File[]) {
+    const list = Array.from(files);
+    const room = MAX_PHOTOS - photos.length;
+    if (room <= 0) {
+      setError(`Up to ${MAX_PHOTOS} photos per plan.`);
+      return;
+    }
+    const slice = list.slice(0, room);
+    for (const file of slice) {
+      if (!isAcceptedImage(file)) {
+        setError('Photos must be JPEG, PNG, or WebP.');
+        continue;
+      }
+      const localId = Math.random().toString(36).slice(2);
+      let previewUrl: string;
+      let blob: Blob;
+      try {
+        const resized = await resizeForUpload(file);
+        previewUrl = resized.previewUrl;
+        blob = resized.blob;
+      } catch (e) {
+        setError((e as Error).message);
+        continue;
+      }
+      setPhotos((prev) => [
+        ...prev,
+        { localId, status: 'uploading', previewUrl, blob },
+      ]);
+      api
+        .uploadStagedPhoto(blob)
+        .then(({ id }) => {
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.localId === localId ? { ...p, status: 'ready', serverId: id } : p
+            )
+          );
+        })
+        .catch((e) => {
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.localId === localId
+                ? { ...p, status: 'error', error: (e as Error).message }
+                : p
+            )
+          );
+        });
+    }
+  }
+
+  function removePhoto(localId: string) {
+    setPhotos((prev) => {
+      const target = prev.find((p) => p.localId === localId);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+        if (target.serverId) {
+          // best-effort cleanup on the server
+          api.deleteStagedPhoto(target.serverId).catch(() => undefined);
+        }
+      }
+      return prev.filter((p) => p.localId !== localId);
+    });
+  }
+
   async function submit() {
     if (!plan || plan.disabled) return;
     setSubmitting(true);
     setError(null);
+
+    // Photos still uploading at commit time — wait briefly, then proceed
+    // without them rather than block forever. (Server has a 24h TTL sweep.)
+    const readyPhotoIds = photos
+      .filter((p) => p.status === 'ready' && p.serverId)
+      .map((p) => p.serverId!) as string[];
+    const photoBlobs = photos
+      .filter((p) => p.status === 'ready' && p.blob)
+      .map((p) => p.blob!) as Blob[];
+
     try {
       if (plan.kind === 'task') {
         if (!includeSet.has(0)) {
-          // shouldn't happen but bail rather than create a phantom task
           onClose();
           return;
         }
@@ -133,6 +256,7 @@ export default function PlanWithAI({
           service_url: t.service_url,
           scoped_model: plan.model || null,
         });
+        await attachPhotosToProject(destProjectId, photoBlobs, readyPhotoIds);
         onCreated({ taskIds: [created.id], projectId: destProjectId });
       } else if (plan.kind === 'task_list') {
         const picks = plan.tasks
@@ -150,12 +274,14 @@ export default function PlanWithAI({
             })
           )
         );
+        await attachPhotosToProject(destProjectId, photoBlobs, readyPhotoIds);
         onCreated({ taskIds: created.map((c) => c.id), projectId: destProjectId });
       } else {
-        // kind === 'project'
+        // kind === 'project' — server-side promote of staged photos.
         const proj = await api.createProject({
           name: projectName.trim() || plan.project.name,
           color: projectColor,
+          staged_photo_ids: readyPhotoIds.length > 0 ? readyPhotoIds : undefined,
         });
         const picks = plan.tasks
           .map((t, i) => ({ t, i }))
@@ -174,11 +300,30 @@ export default function PlanWithAI({
         );
         onCreated({ taskIds: created.map((c) => c.id), projectId: proj.id });
       }
+      // Photos are persisted; clear local state so onClose doesn't try to delete
+      // staged rows the server already promoted/consumed.
+      setPhotos([]);
       onClose();
     } catch (e) {
       setError((e as Error).message);
       setSubmitting(false);
     }
+  }
+
+  // For the task / task_list shapes, the destination project already exists.
+  // The simplest path is to re-upload the Blobs we already have in memory
+  // rather than build a "promote staged-to-existing-project" server path.
+  async function attachPhotosToProject(
+    projectId: string,
+    blobs: Blob[],
+    stagedIds: string[]
+  ) {
+    if (blobs.length === 0) return;
+    await Promise.all(blobs.map((b) => api.uploadProjectPhoto(projectId, b)));
+    // Now that the photos are on the project, clean up staging.
+    await Promise.all(
+      stagedIds.map((id) => api.deleteStagedPhoto(id).catch(() => undefined))
+    );
   }
 
   const disabled = !!plan?.disabled;
@@ -231,6 +376,74 @@ export default function PlanWithAI({
             rows={4}
             className="mt-3 w-full resize-y rounded-card border border-stoop-hairline bg-stoop-panel-warm/40 p-3 text-[14px] leading-relaxed text-stoop-ink outline-none placeholder:text-stoop-muted focus:border-stoop-hairline-2"
           />
+
+          {/* Photo strip — multimodal input for the AI + persisted on the
+              destination project after commit. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  void addPhotos(e.target.files);
+                }
+                e.target.value = '';
+              }}
+            />
+            {photos.map((p) => (
+              <div
+                key={p.localId}
+                className="group relative h-14 w-14 overflow-hidden rounded-md border border-stoop-hairline bg-stoop-canvas"
+              >
+                <img
+                  src={p.previewUrl}
+                  alt=""
+                  className={clsx(
+                    'h-full w-full object-cover',
+                    p.status !== 'ready' && 'opacity-60'
+                  )}
+                />
+                {p.status === 'uploading' && (
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] text-stoop-muted">
+                    …
+                  </span>
+                )}
+                {p.status === 'error' && (
+                  <span className="absolute inset-0 flex items-center justify-center bg-stoop-canvas/80 text-[10px] text-stoop-accent-deep">
+                    err
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removePhoto(p.localId)}
+                  aria-label="Remove photo"
+                  className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-stoop-ink/70 text-[10px] leading-none text-white opacity-0 transition-opacity hover:bg-stoop-ink group-hover:opacity-100"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {photos.length < MAX_PHOTOS && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-14 w-14 items-center justify-center rounded-md border border-dashed border-stoop-hairline-2 text-[11px] text-stoop-muted hover:border-stoop-accent hover:text-stoop-ink"
+              >
+                <span className="flex flex-col items-center leading-tight">
+                  <Icon.Plus className="h-3 w-3" />
+                  Photo
+                </span>
+              </button>
+            )}
+            {photos.length === 0 && (
+              <span className="text-[11.5px] text-stoop-muted">
+                Add photos of the area (optional) — the AI will use them.
+              </span>
+            )}
+          </div>
 
           {text.trim().length === 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">

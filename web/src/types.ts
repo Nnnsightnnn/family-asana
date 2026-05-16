@@ -76,6 +76,19 @@ export type PlanResult =
       tasks: PlanTask[];
     };
 
+export type ProjectPhoto = {
+  id: string;
+  project_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  caption: string | null;
+  uploaded_by: string;
+  created_at: number;
+};
+
 export type AdminStats = {
   users_total: number;
   tasks_total: number;

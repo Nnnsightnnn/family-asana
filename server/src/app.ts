@@ -2,12 +2,14 @@ import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env, isDev } from './env.js';
 import { db } from './db.js';
+import { MAX_PHOTO_BYTES, MAX_PHOTOS_PER_REQUEST } from './photos.js';
 import { authRoutes } from './routes/auth.js';
 import { projectRoutes } from './routes/projects.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -27,6 +29,14 @@ export async function buildApp(): Promise<FastifyInstance> {
     credentials: true,
   });
   await app.register(cookie, { secret: env.SESSION_SECRET });
+  await app.register(multipart, {
+    limits: {
+      // 8 MB ceiling matches the client-side resize target (1600px / ~85% JPEG).
+      // Up to 8 files per request — same cap the per-project total enforces.
+      fileSize: MAX_PHOTO_BYTES,
+      files: MAX_PHOTOS_PER_REQUEST,
+    },
+  });
 
   app.get('/health', async () => ({
     ok: true,

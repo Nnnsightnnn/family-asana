@@ -3,6 +3,7 @@ import type {
   AdminUser,
   PlanResult,
   Project,
+  ProjectPhoto,
   RecurrenceRule,
   ScopeResult,
   Task,
@@ -27,6 +28,22 @@ async function http<T>(method: string, path: string, body?: unknown): Promise<T>
     credentials: 'include',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+// Multipart upload helper. Skip the Content-Type header so the browser
+// sets the multipart boundary itself.
+async function httpMultipart<T>(method: string, path: string, form: FormData): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    credentials: 'include',
+    body: form,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -73,11 +90,28 @@ export const api = {
 
   // projects
   projects: () => http<Project[]>('GET', '/api/projects'),
-  createProject: (data: { name: string; color?: string }) =>
+  createProject: (data: { name: string; color?: string; staged_photo_ids?: string[] }) =>
     http<Project>('POST', '/api/projects', data),
   updateProject: (id: string, data: Partial<Project>) =>
     http<Project>('PATCH', `/api/projects/${id}`, data),
   deleteProject: (id: string) => http<{ ok: true }>('DELETE', `/api/projects/${id}`),
+
+  // project photos
+  listProjectPhotos: (projectId: string) =>
+    http<ProjectPhoto[]>('GET', `/api/projects/${projectId}/photos`),
+  uploadProjectPhoto: (projectId: string, file: Blob) => {
+    const form = new FormData();
+    form.append('file', file);
+    return httpMultipart<{ photos: ProjectPhoto[] }>(
+      'POST',
+      `/api/projects/${projectId}/photos`,
+      form
+    );
+  },
+  deleteProjectPhoto: (projectId: string, photoId: string) =>
+    http<{ ok: true }>('DELETE', `/api/projects/${projectId}/photos/${photoId}`),
+  projectPhotoUrl: (projectId: string, photoId: string) =>
+    `/api/projects/${projectId}/photos/${photoId}/file`,
 
   // tasks
   tasks: (params: { project_id?: string; mine?: boolean } = {}) => {
@@ -108,7 +142,19 @@ export const api = {
     text: string;
     project_id?: string | null;
     tier?: 'fast' | 'smart';
+    staged_photo_ids?: string[];
   }) => http<PlanResult>('POST', '/api/scope/plan', input),
+  uploadStagedPhoto: (file: Blob) => {
+    const form = new FormData();
+    form.append('file', file);
+    return httpMultipart<{ id: string; mime_type: string; size_bytes: number }>(
+      'POST',
+      '/api/scope/staged-photos',
+      form
+    );
+  },
+  deleteStagedPhoto: (id: string) =>
+    http<{ ok: true }>('DELETE', `/api/scope/staged-photos/${id}`),
   scopeTask: async (
     id: string,
     tier?: 'fast' | 'smart'

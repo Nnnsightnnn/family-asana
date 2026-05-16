@@ -324,14 +324,21 @@ Project (umbrella initiative + sub-tasks):
 Constraints:
 - Max 12 tasks per plan. Tighter is better; don't pad.
 - Each task title is 1-12 words.
-- research_prompt is populated ONLY when route=research (and only on the single-task shape).`;
+- research_prompt is populated ONLY when route=research (and only on the single-task shape).
+- If images are attached, treat them as photos of the area the user wants to work on; use them to inform the project name, the chosen shape (lean toward kind="project" when images are present), and the specific tasks.`;
 
 function disabledPlanResult(reason: DisabledReason, model = ''): PlanResult {
   return { disabled: true, disabled_reason: reason, model };
 }
 
 export async function planFromText(
-  input: { text: string; project_id?: string | null },
+  input: {
+    text: string;
+    project_id?: string | null;
+    // Multimodal inputs: base64-encoded image bytes. OpenRouter forwards
+    // these to Claude verbatim using the OpenAI-compatible content-parts API.
+    images?: Array<{ mime_type: string; data_base64: string }>;
+  },
   opts?: { tier?: 'fast' | 'smart' }
 ): Promise<PlanResult> {
   if (!client) {
@@ -343,13 +350,28 @@ export async function planFromText(
   const tier = opts?.tier ?? 'fast';
   const model = tier === 'smart' ? env.OPENROUTER_SMART_MODEL : env.OPENROUTER_FAST_MODEL;
 
+  const userContent: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string } }
+  > = [{ type: 'text', text: input.text.slice(0, 2000) }];
+  for (const img of input.images ?? []) {
+    userContent.push({
+      type: 'image_url',
+      image_url: { url: `data:${img.mime_type};base64,${img.data_base64}` },
+    });
+  }
+
   let raw: string | null = null;
   try {
     const completion = await client.chat.completions.create({
       model,
       messages: [
         { role: 'system', content: PLAN_SYSTEM_PROMPT },
-        { role: 'user', content: input.text.slice(0, 2000) },
+        // String content when no images (cheaper to serialize); content-parts
+        // array when images are attached.
+        input.images && input.images.length > 0
+          ? { role: 'user', content: userContent }
+          : { role: 'user', content: input.text.slice(0, 2000) },
       ],
       response_format: { type: 'json_object' },
       temperature: 0.2,
