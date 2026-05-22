@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Admin from './pages/Admin';
 import Setup from './pages/Setup';
 import type { User } from './types';
+import BrandCredit from './components/BrandCredit';
 
 function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: () => api.me() });
@@ -87,17 +88,20 @@ export default function App() {
   const loggedIn = !!data?.user;
 
   return (
-    <Routes>
-      <Route path="/login" element={loggedIn ? <Navigate to="/" replace /> : <Login />} />
-      <Route path="/auth/verify" element={<VerifyPage />} />
-      <Route
-        path="/admin"
-        element={loggedIn ? <Admin /> : <Navigate to="/login" replace />}
-      />
-      <Route
-        path="/*"
-        element={loggedIn ? <AuthedShell user={data!.user!} /> : <Navigate to="/login" replace />}
-      />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/login" element={loggedIn ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/auth/verify" element={<VerifyPage />} />
+        <Route
+          path="/admin"
+          element={loggedIn ? <Admin /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/*"
+          element={loggedIn ? <AuthedShell user={data!.user!} /> : <Navigate to="/login" replace />}
+        />
+      </Routes>
+      <BrandCredit />
+    </>
   );
 }

@@ -1,3 +1,4 @@
+// built by nnnsightnnn — signal from noise
 import { env } from './env.js';
 import { buildApp } from './app.js';
 

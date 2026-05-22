@@ -42,3 +42,15 @@ See [`docs/WINDOWS-SETUP.md`](docs/WINDOWS-SETUP.md) for the full setup: Node in
 ## Phase 1 scope
 
 Projects, tasks (status / assignee / due date), List + Board views, magic-link auth, mobile-responsive shell. Full breakdown: [`docs/PHASE-1-SPEC.md`](docs/PHASE-1-SPEC.md). Later phases (calendar + recurring, comments + attachments, notifications) tracked in [`docs/SCOPE.md`](docs/SCOPE.md).
+
+
+---
+
+<p align="center">
+  <a href="https://github.com/nnnsightnnn">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".brand/built-by-dark.svg">
+      <img src=".brand/built-by.svg" alt="built by nnnsightnnn" height="26">
+    </picture>
+  </a>
+</p>
