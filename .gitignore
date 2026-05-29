@@ -34,3 +34,7 @@ CLAUDE.md
 # Operational / deploy notes — local-only, not part of the codebase
 docs/
 
+
+
+# Local Antigravity bridge — keep local
+AGENTS.md

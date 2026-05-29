@@ -11,6 +11,7 @@ import { Icon } from '../components/atoms';
 import SearchBar from '../components/SearchBar';
 import Fab from '../components/Fab';
 import PlanWithAI from '../components/PlanWithAI';
+import WelcomeOverlay from '../components/WelcomeOverlay';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 
 export default function Dashboard({ user }: { user: User }) {
@@ -160,6 +161,8 @@ export default function Dashboard({ user }: { user: User }) {
           onCreated={onPlanCreated}
         />
       )}
+
+      <WelcomeOverlay />
     </div>
   );
 }
