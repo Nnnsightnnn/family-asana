@@ -3,7 +3,7 @@ export default function BrandCredit() {
   return (
     <footer style={{ display: "flex", justifyContent: "center", padding: "22px 16px",
       font: '500 13px/1 ui-monospace,"JetBrains Mono",Menlo,monospace' }}>
-      <a href="https://github.com/nnnsightnnn" target="_blank" rel="noopener noreferrer"
+      <a href="https://nnnsightnnn.com" target="_blank" rel="noopener noreferrer"
         style={{ display: "inline-flex", alignItems: "center", gap: 7,
           color: "#8B8C97", textDecoration: "none" }}>
         <svg width="16" height="16" viewBox="0 0 200 200" aria-hidden="true">
